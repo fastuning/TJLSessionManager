@@ -1,0 +1,411 @@
+<?php
+class ControllerExtensionModuleStripeProductPayment extends Controller {
+
+    public function process() {
+        $this->load->language('extension/payment/stripe_applepay');
+
+        $json = array();
+
+        // Verify that the extension is enabled
+        if (!$this->config->get('payment_stripe_applepay_status')) {
+            $json['error'] = 'Payment method not available';
+            $this->response->addHeader('Content-Type: application/json');
+            $this->response->setOutput(json_encode($json));
+            return;
+        }
+
+        // Get POST data
+        $post_data = json_decode(file_get_contents('php://input'), true);
+
+        if (!$post_data) {
+            $post_data = $this->request->post;
+        }
+
+        $action = isset($post_data['action']) ? $post_data['action'] : '';
+
+        switch ($action) {
+            case 'create_payment_intent':
+                $json = $this->createPaymentIntent($post_data);
+                break;
+            case 'confirm_payment':
+                $json = $this->confirmPayment($post_data);
+                break;
+            case 'get_shipping':
+                $json = $this->getShippingOptions($post_data);
+                break;
+            default:
+                $json['error'] = 'Invalid action';
+        }
+
+        $this->response->addHeader('Content-Type: application/json');
+        $this->response->setOutput(json_encode($json));
+    }
+
+    private function createPaymentIntent($data) {
+        $json = array();
+
+        try {
+            $this->load->model('catalog/product');
+            $this->load->model('account/customer');
+
+            $product_id = isset($data['product_id']) ? (int)$data['product_id'] : 0;
+            $quantity = isset($data['quantity']) ? (int)$data['quantity'] : 1;
+            $option = isset($data['option']) ? $data['option'] : array();
+
+            if (!$product_id) {
+                $json['error'] = 'Invalid product';
+                return $json;
+            }
+
+            $product_info = $this->model_catalog_product->getProduct($product_id);
+
+            if (!$product_info) {
+                $json['error'] = 'Product not found';
+                return $json;
+            }
+
+            // Calculate total
+            $price = $this->tax->calculate($product_info['price'], $product_info['tax_class_id'], $this->config->get('config_tax'));
+
+            // Check for special price
+            if ((float)$product_info['special']) {
+                $price = $this->tax->calculate($product_info['special'], $product_info['tax_class_id'], $this->config->get('config_tax'));
+            }
+
+            // Add option prices
+            if ($option) {
+                foreach ($option as $product_option_id => $value) {
+                    $product_option_value_info = $this->model_catalog_product->getProductOptionValue($product_id, $value);
+
+                    if ($product_option_value_info) {
+                        if ($product_option_value_info['price_prefix'] == '+') {
+                            $price += $this->tax->calculate($product_option_value_info['price'], $product_info['tax_class_id'], $this->config->get('config_tax'));
+                        } elseif ($product_option_value_info['price_prefix'] == '-') {
+                            $price -= $this->tax->calculate($product_option_value_info['price'], $product_info['tax_class_id'], $this->config->get('config_tax'));
+                        }
+                    }
+                }
+            }
+
+            $total = $price * $quantity;
+
+            // Create Stripe Payment Intent
+            $secret_key = $this->config->get('payment_stripe_applepay_secret_key');
+            $amount = (int)($total * 100); // Convert to cents
+            $currency = strtolower($this->session->data['currency']);
+
+            $payment_intent = $this->stripeRequest('payment_intents', array(
+                'amount' => $amount,
+                'currency' => $currency,
+                'automatic_payment_methods' => array(
+                    'enabled' => true,
+                ),
+                'metadata' => array(
+                    'product_id' => $product_id,
+                    'quantity' => $quantity,
+                    'product_name' => $product_info['name'],
+                )
+            ));
+
+            if (isset($payment_intent->id)) {
+                $json['client_secret'] = $payment_intent->client_secret;
+                $json['amount'] = $amount;
+                $json['currency'] = $currency;
+                $json['product_name'] = $product_info['name'];
+            } else {
+                $json['error'] = 'Failed to create payment intent';
+            }
+
+        } catch (Exception $e) {
+            $json['error'] = $e->getMessage();
+        }
+
+        return $json;
+    }
+
+    private function confirmPayment($data) {
+        $json = array();
+
+        try {
+            $payment_intent_id = isset($data['payment_intent_id']) ? $data['payment_intent_id'] : '';
+            $product_id = isset($data['product_id']) ? (int)$data['product_id'] : 0;
+            $quantity = isset($data['quantity']) ? (int)$data['quantity'] : 1;
+            $option = isset($data['option']) ? $data['option'] : array();
+            $shipping_address = isset($data['shipping_address']) ? $data['shipping_address'] : array();
+            $billing_address = isset($data['billing_address']) ? $data['billing_address'] : array();
+
+            if (!$payment_intent_id) {
+                $json['error'] = 'Invalid payment intent';
+                return $json;
+            }
+
+            // Retrieve payment intent from Stripe
+            $payment_intent = $this->stripeRequest('payment_intents/' . $payment_intent_id, array(), 'GET');
+
+            if ($payment_intent->status == 'succeeded') {
+                // Create order
+                $order_id = $this->createOrder($product_id, $quantity, $option, $shipping_address, $billing_address, $payment_intent);
+
+                if ($order_id) {
+                    $json['success'] = true;
+                    $json['order_id'] = $order_id;
+                    $json['redirect'] = $this->url->link('checkout/success', '', true);
+                } else {
+                    $json['error'] = 'Failed to create order';
+                }
+            } else {
+                $json['error'] = 'Payment not completed';
+            }
+
+        } catch (Exception $e) {
+            $json['error'] = $e->getMessage();
+        }
+
+        return $json;
+    }
+
+    private function getShippingOptions($data) {
+        $json = array();
+
+        try {
+            $this->load->model('setting/extension');
+            $this->load->model('catalog/product');
+
+            $product_id = isset($data['product_id']) ? (int)$data['product_id'] : 0;
+            $quantity = isset($data['quantity']) ? (int)$data['quantity'] : 1;
+            $country = isset($data['country']) ? $data['country'] : '';
+            $postcode = isset($data['postcode']) ? $data['postcode'] : '';
+
+            $product_info = $this->model_catalog_product->getProduct($product_id);
+
+            if (!$product_info) {
+                $json['error'] = 'Product not found';
+                return $json;
+            }
+
+            // Get shipping methods
+            $shipping_methods = array();
+
+            $results = $this->model_setting_extension->getExtensions('shipping');
+
+            foreach ($results as $result) {
+                if ($this->config->get('shipping_' . $result['code'] . '_status')) {
+                    $this->load->model('extension/shipping/' . $result['code']);
+
+                    $quote = $this->{'model_extension_shipping_' . $result['code']}->getQuote(array(
+                        'country_id' => $country,
+                        'postcode' => $postcode
+                    ));
+
+                    if ($quote) {
+                        $shipping_methods[] = $quote;
+                    }
+                }
+            }
+
+            $json['shipping_options'] = array();
+
+            foreach ($shipping_methods as $shipping_method) {
+                foreach ($shipping_method['quote'] as $quote) {
+                    $json['shipping_options'][] = array(
+                        'id' => $quote['code'],
+                        'label' => $shipping_method['title'] . ' - ' . $quote['title'],
+                        'amount' => (int)($quote['cost'] * 100)
+                    );
+                }
+            }
+
+        } catch (Exception $e) {
+            $json['error'] = $e->getMessage();
+        }
+
+        return $json;
+    }
+
+    private function createOrder($product_id, $quantity, $option, $shipping_address, $billing_address, $payment_intent) {
+        $this->load->model('catalog/product');
+        $this->load->model('checkout/order');
+
+        $product_info = $this->model_catalog_product->getProduct($product_id);
+
+        if (!$product_info) {
+            return false;
+        }
+
+        // Calculate totals
+        $price = $this->tax->calculate($product_info['price'], $product_info['tax_class_id'], $this->config->get('config_tax'));
+
+        if ((float)$product_info['special']) {
+            $price = $this->tax->calculate($product_info['special'], $product_info['tax_class_id'], $this->config->get('config_tax'));
+        }
+
+        $total = $price * $quantity;
+
+        // Prepare order data
+        $order_data = array();
+
+        // Store details
+        $order_data['invoice_prefix'] = $this->config->get('config_invoice_prefix');
+        $order_data['store_id'] = $this->config->get('config_store_id');
+        $order_data['store_name'] = $this->config->get('config_name');
+        $order_data['store_url'] = $this->config->get('config_url');
+
+        // Customer details
+        if ($this->customer->isLogged()) {
+            $order_data['customer_id'] = $this->customer->getId();
+            $order_data['customer_group_id'] = $this->customer->getGroupId();
+            $order_data['firstname'] = $this->customer->getFirstName();
+            $order_data['lastname'] = $this->customer->getLastName();
+            $order_data['email'] = $this->customer->getEmail();
+            $order_data['telephone'] = $this->customer->getTelephone();
+        } else {
+            $order_data['customer_id'] = 0;
+            $order_data['customer_group_id'] = $this->config->get('config_customer_group_id');
+            $order_data['firstname'] = isset($billing_address['name']) ? $billing_address['name'] : 'Guest';
+            $order_data['lastname'] = '';
+            $order_data['email'] = isset($billing_address['email']) ? $billing_address['email'] : '';
+            $order_data['telephone'] = isset($billing_address['phone']) ? $billing_address['phone'] : '';
+        }
+
+        // Payment address
+        $order_data['payment_firstname'] = isset($billing_address['name']) ? $billing_address['name'] : '';
+        $order_data['payment_lastname'] = '';
+        $order_data['payment_company'] = '';
+        $order_data['payment_address_1'] = isset($billing_address['address_line1']) ? $billing_address['address_line1'] : '';
+        $order_data['payment_address_2'] = isset($billing_address['address_line2']) ? $billing_address['address_line2'] : '';
+        $order_data['payment_city'] = isset($billing_address['city']) ? $billing_address['city'] : '';
+        $order_data['payment_postcode'] = isset($billing_address['postal_code']) ? $billing_address['postal_code'] : '';
+        $order_data['payment_zone'] = isset($billing_address['state']) ? $billing_address['state'] : '';
+        $order_data['payment_zone_id'] = 0;
+        $order_data['payment_country'] = isset($billing_address['country']) ? $billing_address['country'] : '';
+        $order_data['payment_country_id'] = 0;
+        $order_data['payment_address_format'] = '';
+        $order_data['payment_method'] = 'Stripe Apple Pay';
+        $order_data['payment_code'] = 'stripe_applepay';
+
+        // Shipping address
+        $order_data['shipping_firstname'] = isset($shipping_address['name']) ? $shipping_address['name'] : '';
+        $order_data['shipping_lastname'] = '';
+        $order_data['shipping_company'] = '';
+        $order_data['shipping_address_1'] = isset($shipping_address['address_line1']) ? $shipping_address['address_line1'] : '';
+        $order_data['shipping_address_2'] = isset($shipping_address['address_line2']) ? $shipping_address['address_line2'] : '';
+        $order_data['shipping_city'] = isset($shipping_address['city']) ? $shipping_address['city'] : '';
+        $order_data['shipping_postcode'] = isset($shipping_address['postal_code']) ? $shipping_address['postal_code'] : '';
+        $order_data['shipping_zone'] = isset($shipping_address['state']) ? $shipping_address['state'] : '';
+        $order_data['shipping_zone_id'] = 0;
+        $order_data['shipping_country'] = isset($shipping_address['country']) ? $shipping_address['country'] : '';
+        $order_data['shipping_country_id'] = 0;
+        $order_data['shipping_address_format'] = '';
+        $order_data['shipping_method'] = 'Standard Shipping';
+        $order_data['shipping_code'] = 'flat.flat';
+
+        // Products
+        $order_data['products'] = array();
+
+        $order_data['products'][] = array(
+            'product_id' => $product_id,
+            'name' => $product_info['name'],
+            'model' => $product_info['model'],
+            'option' => $option,
+            'download' => array(),
+            'quantity' => $quantity,
+            'subtract' => $product_info['subtract'],
+            'price' => $price,
+            'total' => $total,
+            'tax' => $this->tax->getTax($price, $product_info['tax_class_id']),
+            'reward' => $product_info['reward']
+        );
+
+        // Totals
+        $order_data['totals'] = array();
+
+        $order_data['totals'][] = array(
+            'code' => 'sub_total',
+            'title' => 'Sub-Total',
+            'value' => $total,
+            'sort_order' => 1
+        );
+
+        $order_data['totals'][] = array(
+            'code' => 'total',
+            'title' => 'Total',
+            'value' => $total,
+            'sort_order' => 9
+        );
+
+        $order_data['total'] = $total;
+
+        // Other details
+        $order_data['affiliate_id'] = 0;
+        $order_data['commission'] = 0;
+        $order_data['marketing_id'] = 0;
+        $order_data['tracking'] = '';
+        $order_data['language_id'] = $this->config->get('config_language_id');
+        $order_data['currency_id'] = $this->currency->getId($this->session->data['currency']);
+        $order_data['currency_code'] = $this->session->data['currency'];
+        $order_data['currency_value'] = $this->currency->getValue($this->session->data['currency']);
+        $order_data['ip'] = $this->request->server['REMOTE_ADDR'];
+        $order_data['forwarded_ip'] = '';
+        $order_data['user_agent'] = isset($this->request->server['HTTP_USER_AGENT']) ? $this->request->server['HTTP_USER_AGENT'] : '';
+        $order_data['accept_language'] = isset($this->request->server['HTTP_ACCEPT_LANGUAGE']) ? $this->request->server['HTTP_ACCEPT_LANGUAGE'] : '';
+
+        $order_data['comment'] = 'Paid via Apple Pay (Stripe) - Payment Intent: ' . $payment_intent->id;
+
+        // Add order
+        $order_id = $this->model_checkout_order->addOrder($order_data);
+
+        // Update order status
+        $order_status_id = $this->config->get('payment_stripe_applepay_order_status_id');
+
+        if ($order_status_id) {
+            $this->model_checkout_order->addOrderHistory($order_id, $order_status_id, 'Payment completed via Stripe Apple Pay', true);
+        }
+
+        // Update product stock
+        $this->model_catalog_product->updateQuantity($product_id, -$quantity);
+
+        return $order_id;
+    }
+
+    private function stripeRequest($endpoint, $data = array(), $method = 'POST') {
+        $secret_key = $this->config->get('payment_stripe_applepay_secret_key');
+
+        $url = 'https://api.stripe.com/v1/' . $endpoint;
+
+        $ch = curl_init();
+
+        curl_setopt($ch, CURLOPT_URL, $url);
+        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+        curl_setopt($ch, CURLOPT_USERPWD, $secret_key . ':');
+
+        if ($method == 'POST') {
+            curl_setopt($ch, CURLOPT_POST, true);
+            curl_setopt($ch, CURLOPT_POSTFIELDS, http_build_query($this->flattenArray($data)));
+        }
+
+        $response = curl_exec($ch);
+
+        curl_close($ch);
+
+        return json_decode($response);
+    }
+
+    private function flattenArray($array, $prefix = '') {
+        $result = array();
+
+        foreach ($array as $key => $value) {
+            $new_key = $prefix . $key;
+
+            if (is_array($value)) {
+                $result = array_merge($result, $this->flattenArray($value, $new_key . '['));
+                if (substr($new_key, -1) !== '[') {
+                    $new_key .= ']';
+                }
+            } else {
+                $result[$new_key] = $value;
+            }
+        }
+
+        return $result;
+    }
+}

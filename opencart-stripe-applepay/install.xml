@@ -1,0 +1,67 @@
+<?xml version="1.0" encoding="utf-8"?>
+<modification>
+    <name>Stripe Apple Pay - Product Page Button</name>
+    <code>stripe_applepay_product_button</code>
+    <version>1.0.0</version>
+    <author>Custom Development</author>
+    <link>https://www.stripe.com</link>
+
+    <!-- Add Apple Pay button to product page -->
+    <file path="catalog/view/theme/*/template/product/product.twig">
+        <operation>
+            <search><![CDATA[<button type="button" id="button-cart"]]></search>
+            <add position="before"><![CDATA[{% if config_payment_stripe_applepay_status and config_payment_stripe_applepay_product_button %}
+            <!-- Stripe Apple Pay Button -->
+            <div id="stripe-applepay-button-container" style="margin-bottom: 15px;"></div>
+            <div id="stripe-applepay-divider" style="text-align: center; margin: 15px 0; display: none;">
+                <span style="background: #fff; padding: 0 10px; color: #999;">O</span>
+            </div>
+{% endif %}
+            ]]></add>
+        </operation>
+    </file>
+
+    <!-- Add Stripe Apple Pay JavaScript before closing body tag -->
+    <file path="catalog/view/theme/*/template/product/product.twig">
+        <operation>
+            <search><![CDATA[{{ footer }}]]></search>
+            <add position="before"><![CDATA[{% if config_payment_stripe_applepay_status and config_payment_stripe_applepay_product_button %}
+<script src="https://js.stripe.com/v3/"></script>
+<script src="catalog/view/javascript/stripe_applepay.js"></script>
+<script>
+// Initialize Stripe Apple Pay on product page
+if (typeof StripeProductApplePay !== 'undefined') {
+    document.addEventListener('DOMContentLoaded', function() {
+        var productData = {
+            product_id: {{ product_id }},
+            {% if options %}
+            options: {{ options|json_encode|raw }},
+            {% endif %}
+            quantity_selector: '#input-quantity',
+            price_element: '#product .price-new, #product .price',
+            currency: '{{ currency_code }}',
+            ajax_url: 'index.php?route=extension/module/stripe_product_payment/process'
+        };
+
+        StripeProductApplePay.init(productData);
+    });
+}
+</script>
+{% endif %}
+            ]]></add>
+        </operation>
+    </file>
+
+    <!-- Add Stripe Publishable Key and Apple Pay meta tags -->
+    <file path="catalog/view/theme/*/template/common/header.twig">
+        <operation>
+            <search><![CDATA[<head>]]></search>
+            <add position="after"><![CDATA[
+{% if config_payment_stripe_applepay_status and config_payment_stripe_applepay_publishable_key %}
+<meta name="stripe-publishable-key" content="{{ config_payment_stripe_applepay_publishable_key }}">
+<meta name="apple-pay-domain-association-file" content="/.well-known/apple-developer-merchantid-domain-association">
+{% endif %}
+            ]]></add>
+        </operation>
+    </file>
+</modification>
