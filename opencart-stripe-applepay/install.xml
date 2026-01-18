@@ -10,13 +10,12 @@
     <file path="catalog/view/theme/*/template/product/product.twig">
         <operation>
             <search><![CDATA[<a id="button-cart"]]></search>
-            <add position="before"><![CDATA[{% if config_payment_stripe_applepay_status and config_payment_stripe_applepay_product_button %}
+            <add position="before"><![CDATA[
             <!-- Stripe Apple Pay Button -->
             <div id="stripe-applepay-button-container" style="margin-bottom: 15px;"></div>
             <div id="stripe-applepay-divider" style="text-align: center; margin: 15px 0; display: none;">
                 <span style="background: #fff; padding: 0 10px; color: #999;">O</span>
             </div>
-{% endif %}
             ]]></add>
         </operation>
     </file>
@@ -25,7 +24,7 @@
     <file path="catalog/view/theme/*/template/product/product.twig">
         <operation>
             <search><![CDATA[{{ footer }}]]></search>
-            <add position="before"><![CDATA[{% if config_payment_stripe_applepay_status and config_payment_stripe_applepay_product_button %}
+            <add position="before"><![CDATA[
 <script src="https://js.stripe.com/v3/"></script>
 <script src="catalog/view/javascript/stripe_applepay.js"></script>
 <script>
@@ -47,20 +46,16 @@ if (typeof StripeProductApplePay !== 'undefined') {
     });
 }
 </script>
-{% endif %}
             ]]></add>
         </operation>
     </file>
 
-    <!-- Add Stripe Publishable Key and Apple Pay meta tags -->
+    <!-- Add Apple Pay domain association meta tag -->
     <file path="catalog/view/theme/*/template/common/header.twig">
         <operation>
             <search><![CDATA[<head>]]></search>
             <add position="after"><![CDATA[
-{% if config_payment_stripe_applepay_status and config_payment_stripe_applepay_publishable_key %}
-<meta name="stripe-publishable-key" content="{{ config_payment_stripe_applepay_publishable_key }}">
 <meta name="apple-pay-domain-association-file" content="/.well-known/apple-developer-merchantid-domain-association">
-{% endif %}
             ]]></add>
         </operation>
     </file>

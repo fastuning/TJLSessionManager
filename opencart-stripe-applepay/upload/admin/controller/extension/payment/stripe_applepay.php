@@ -143,6 +143,7 @@ class ControllerExtensionPaymentStripeApplepay extends Controller {
 
     public function install() {
         $this->load->model('setting/setting');
+        $this->load->model('setting/event');
 
         // Default settings
         $this->model_setting_setting->editSetting('payment_stripe_applepay', array(
@@ -152,10 +153,22 @@ class ControllerExtensionPaymentStripeApplepay extends Controller {
             'payment_stripe_applepay_button_style' => 'black',
             'payment_stripe_applepay_sort_order' => 1
         ));
+
+        // Register event to inject publishable key
+        $this->model_setting_event->addEvent(
+            'stripe_applepay_inject_key',
+            'catalog/view/*/after',
+            'extension/module/stripe_applepay_event/injectPublishableKey'
+        );
     }
 
     public function uninstall() {
         $this->load->model('setting/setting');
+        $this->load->model('setting/event');
+
         $this->model_setting_setting->deleteSetting('payment_stripe_applepay');
+
+        // Remove event
+        $this->model_setting_event->deleteEventByCode('stripe_applepay_inject_key');
     }
 }
