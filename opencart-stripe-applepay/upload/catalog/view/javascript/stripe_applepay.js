@@ -130,6 +130,34 @@ var StripeProductApplePay = (function() {
      */
     function displayApplePayButton() {
         var container = document.getElementById('stripe-applepay-button-container');
+
+        // If container doesn't exist, create it and inject before cart button
+        if (!container) {
+            var cartButton = document.getElementById('button-cart');
+            if (cartButton) {
+                // Create container
+                container = document.createElement('div');
+                container.id = 'stripe-applepay-button-container';
+                container.style.marginBottom = '15px';
+
+                // Create divider
+                var divider = document.createElement('div');
+                divider.id = 'stripe-applepay-divider';
+                divider.style.textAlign = 'center';
+                divider.style.margin = '15px 0';
+                divider.style.display = 'none';
+                divider.innerHTML = '<span style="background: #fff; padding: 0 10px; color: #999;">O</span>';
+
+                // Insert before cart button
+                var parent = cartButton.parentNode;
+                parent.insertBefore(divider, cartButton);
+                parent.insertBefore(container, divider);
+            } else {
+                console.warn('Cart button not found, cannot inject Apple Pay button');
+                return;
+            }
+        }
+
         if (!container) return;
 
         var elements = config.stripe.elements();
