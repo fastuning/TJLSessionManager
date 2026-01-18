@@ -2,7 +2,7 @@
 <modification>
     <name>Stripe Apple Pay - Product Page Button</name>
     <code>stripe_applepay_product_button</code>
-    <version>1.0.1</version>
+    <version>1.0.2</version>
     <author>Custom Development</author>
     <link>https://www.stripe.com</link>
 
@@ -25,6 +25,11 @@
         <operation>
             <search><![CDATA[{{ footer }}]]></search>
             <add position="before"><![CDATA[
+{% set stripe_key = config.get('payment_stripe_applepay_publishable_key') %}
+{% set stripe_enabled = config.get('payment_stripe_applepay_status') %}
+{% set stripe_button_enabled = config.get('payment_stripe_applepay_product_button') %}
+{% if stripe_enabled and stripe_button_enabled and stripe_key %}
+<meta name="stripe-publishable-key" content="{{ stripe_key }}">
 <script src="https://js.stripe.com/v3/"></script>
 <script src="catalog/view/javascript/stripe_applepay.js"></script>
 <script>
@@ -46,6 +51,7 @@ if (typeof StripeProductApplePay !== 'undefined') {
     });
 }
 </script>
+{% endif %}
             ]]></add>
         </operation>
     </file>
