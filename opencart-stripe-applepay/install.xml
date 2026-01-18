@@ -9,7 +9,7 @@
     <!-- Add Apple Pay button to product page -->
     <file path="catalog/view/theme/*/template/product/product.twig">
         <operation>
-            <search><![CDATA[<button type="button" id="button-cart"]]></search>
+            <search><![CDATA[<a id="button-cart"]]></search>
             <add position="before"><![CDATA[{% if config_payment_stripe_applepay_status and config_payment_stripe_applepay_product_button %}
             <!-- Stripe Apple Pay Button -->
             <div id="stripe-applepay-button-container" style="margin-bottom: 15px;"></div>
@@ -37,7 +37,7 @@ if (typeof StripeProductApplePay !== 'undefined') {
             {% if options %}
             options: {{ options|json_encode|raw }},
             {% endif %}
-            quantity_selector: '#input-quantity',
+            quantity_selector: '#product-quantity, #input-quantity',
             price_element: '#product .price-new, #product .price',
             currency: '{{ currency_code }}',
             ajax_url: 'index.php?route=extension/module/stripe_product_payment/process'
