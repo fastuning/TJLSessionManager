@@ -2,7 +2,7 @@
 <modification>
     <name>Stripe Apple Pay - Product Page Button</name>
     <code>stripe_applepay_product_button</code>
-    <version>1.0.4</version>
+    <version>1.0.5</version>
     <author>Custom Development</author>
     <link>https://www.stripe.com</link>
 
@@ -11,20 +11,46 @@
         <operation>
             <search><![CDATA[<a id="button-cart"]]></search>
             <add position="before"><![CDATA[
-            <!-- Stripe Apple Pay Button -->
-            <div id="stripe-applepay-button-container" style="margin-bottom: 15px;"></div>
-            <div id="stripe-applepay-divider" style="text-align: center; margin: 15px 0; display: none;">
-                <span style="background: #fff; padding: 0 10px; color: #999;">O</span>
-            </div>
             <!-- Stripe Scripts -->
             <script>
             (function() {
+                console.log('[Stripe] Starting initialization...');
+
+                // Create button container and divider
+                var container = document.createElement('div');
+                container.id = 'stripe-applepay-button-container';
+                container.style.marginTop = '15px';
+                container.style.marginBottom = '15px';
+
+                var divider = document.createElement('div');
+                divider.id = 'stripe-applepay-divider';
+                divider.style.textAlign = 'center';
+                divider.style.margin = '15px 0';
+                divider.style.display = 'none';
+                divider.innerHTML = '<span style="background: #fff; padding: 0 10px; color: #999;">O</span>';
+
+                // Insert after .button-group-page
+                var buttonGroup = document.querySelector('.button-group-page');
+                if (buttonGroup && buttonGroup.parentNode) {
+                    buttonGroup.parentNode.insertBefore(divider, buttonGroup.nextSibling);
+                    buttonGroup.parentNode.insertBefore(container, divider);
+                    console.log('[Stripe] Container inserted after .button-group-page');
+                } else {
+                    console.warn('[Stripe] .button-group-page not found');
+                    return;
+                }
+
                 // Fetch Stripe configuration from server
                 fetch('index.php?route=extension/module/stripe_product_payment/getConfig')
-                    .then(function(response) { return response.json(); })
+                    .then(function(response) {
+                        console.log('[Stripe] Config response received');
+                        return response.json();
+                    })
                     .then(function(config) {
+                        console.log('[Stripe] Config:', config);
+
                         if (!config.enabled || !config.publishable_key) {
-                            console.log('Stripe Apple Pay not configured');
+                            console.log('[Stripe] Apple Pay not configured or disabled');
                             return;
                         }
 
@@ -34,22 +60,33 @@
                             meta.name = 'stripe-publishable-key';
                             meta.content = config.publishable_key;
                             document.head.appendChild(meta);
+                            console.log('[Stripe] Publishable key injected');
                         }
 
                         // Load Stripe.js
                         if (typeof Stripe === 'undefined') {
+                            console.log('[Stripe] Loading Stripe.js...');
                             var stripeScript = document.createElement('script');
                             stripeScript.src = 'https://js.stripe.com/v3/';
-                            stripeScript.onload = function() { loadStripeApplePay(); };
+                            stripeScript.onload = function() {
+                                console.log('[Stripe] Stripe.js loaded');
+                                loadStripeApplePay();
+                            };
+                            stripeScript.onerror = function() {
+                                console.error('[Stripe] Failed to load Stripe.js');
+                            };
                             document.head.appendChild(stripeScript);
                         } else {
+                            console.log('[Stripe] Stripe.js already loaded');
                             loadStripeApplePay();
                         }
 
                         function loadStripeApplePay() {
+                            console.log('[Stripe] Loading stripe_applepay.js...');
                             var applePayScript = document.createElement('script');
                             applePayScript.src = 'catalog/view/javascript/stripe_applepay.js';
                             applePayScript.onload = function() {
+                                console.log('[Stripe] stripe_applepay.js loaded');
                                 if (typeof StripeProductApplePay !== 'undefined') {
                                     var productData = {
                                         product_id: {{ product_id }},
@@ -61,14 +98,20 @@
                                         currency: '{{ currency_code }}',
                                         ajax_url: 'index.php?route=extension/module/stripe_product_payment/process'
                                     };
+                                    console.log('[Stripe] Initializing with product data:', productData);
                                     StripeProductApplePay.init(productData);
+                                } else {
+                                    console.error('[Stripe] StripeProductApplePay not defined');
                                 }
+                            };
+                            applePayScript.onerror = function() {
+                                console.error('[Stripe] Failed to load stripe_applepay.js');
                             };
                             document.head.appendChild(applePayScript);
                         }
                     })
                     .catch(function(error) {
-                        console.error('Failed to load Stripe config:', error);
+                        console.error('[Stripe] Failed to load config:', error);
                     });
             })();
             </script>
