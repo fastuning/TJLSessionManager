@@ -1,6 +1,21 @@
 <?php
 class ControllerExtensionModuleStripeProductPayment extends Controller {
 
+    public function getConfig() {
+        $json = array();
+
+        // Check if extension is enabled
+        $enabled = $this->config->get('payment_stripe_applepay_status');
+        $product_button = $this->config->get('payment_stripe_applepay_product_button');
+        $publishable_key = $this->config->get('payment_stripe_applepay_publishable_key');
+
+        $json['enabled'] = $enabled && $product_button;
+        $json['publishable_key'] = $enabled && $product_button ? $publishable_key : '';
+
+        $this->response->addHeader('Content-Type: application/json');
+        $this->response->setOutput(json_encode($json));
+    }
+
     public function process() {
         $this->load->language('extension/payment/stripe_applepay');
 

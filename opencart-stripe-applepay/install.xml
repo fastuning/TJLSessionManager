@@ -2,7 +2,7 @@
 <modification>
     <name>Stripe Apple Pay - Product Page Button</name>
     <code>stripe_applepay_product_button</code>
-    <version>1.0.3</version>
+    <version>1.0.4</version>
     <author>Custom Development</author>
     <link>https://www.stripe.com</link>
 
@@ -17,52 +17,61 @@
                 <span style="background: #fff; padding: 0 10px; color: #999;">O</span>
             </div>
             <!-- Stripe Scripts -->
-            {% set stripe_key = config.get('payment_stripe_applepay_publishable_key') %}
-            {% set stripe_enabled = config.get('payment_stripe_applepay_status') %}
-            {% set stripe_button_enabled = config.get('payment_stripe_applepay_product_button') %}
-            {% if stripe_enabled and stripe_button_enabled and stripe_key %}
             <script>
-            // Inject Stripe meta tag
-            if (!document.querySelector('meta[name="stripe-publishable-key"]')) {
-                var meta = document.createElement('meta');
-                meta.name = 'stripe-publishable-key';
-                meta.content = '{{ stripe_key }}';
-                document.head.appendChild(meta);
-            }
-            // Load Stripe.js
-            if (typeof Stripe === 'undefined') {
-                var stripeScript = document.createElement('script');
-                stripeScript.src = 'https://js.stripe.com/v3/';
-                stripeScript.onload = function() {
-                    loadStripeApplePay();
-                };
-                document.head.appendChild(stripeScript);
-            } else {
-                loadStripeApplePay();
-            }
+            (function() {
+                // Fetch Stripe configuration from server
+                fetch('index.php?route=extension/module/stripe_product_payment/getConfig')
+                    .then(function(response) { return response.json(); })
+                    .then(function(config) {
+                        if (!config.enabled || !config.publishable_key) {
+                            console.log('Stripe Apple Pay not configured');
+                            return;
+                        }
 
-            function loadStripeApplePay() {
-                var applePayScript = document.createElement('script');
-                applePayScript.src = 'catalog/view/javascript/stripe_applepay.js';
-                applePayScript.onload = function() {
-                    if (typeof StripeProductApplePay !== 'undefined') {
-                        var productData = {
-                            product_id: {{ product_id }},
-                            {% if options %}
-                            options: {{ options|json_encode|raw }},
-                            {% endif %}
-                            quantity_selector: '#product-quantity, #input-quantity',
-                            price_element: '#product .price-new, #product .price',
-                            currency: '{{ currency_code }}',
-                            ajax_url: 'index.php?route=extension/module/stripe_product_payment/process'
-                        };
-                        StripeProductApplePay.init(productData);
-                    }
-                };
-                document.head.appendChild(applePayScript);
-            }
+                        // Inject meta tag with publishable key
+                        if (!document.querySelector('meta[name="stripe-publishable-key"]')) {
+                            var meta = document.createElement('meta');
+                            meta.name = 'stripe-publishable-key';
+                            meta.content = config.publishable_key;
+                            document.head.appendChild(meta);
+                        }
+
+                        // Load Stripe.js
+                        if (typeof Stripe === 'undefined') {
+                            var stripeScript = document.createElement('script');
+                            stripeScript.src = 'https://js.stripe.com/v3/';
+                            stripeScript.onload = function() { loadStripeApplePay(); };
+                            document.head.appendChild(stripeScript);
+                        } else {
+                            loadStripeApplePay();
+                        }
+
+                        function loadStripeApplePay() {
+                            var applePayScript = document.createElement('script');
+                            applePayScript.src = 'catalog/view/javascript/stripe_applepay.js';
+                            applePayScript.onload = function() {
+                                if (typeof StripeProductApplePay !== 'undefined') {
+                                    var productData = {
+                                        product_id: {{ product_id }},
+                                        {% if options %}
+                                        options: {{ options|json_encode|raw }},
+                                        {% endif %}
+                                        quantity_selector: '#product-quantity, #input-quantity',
+                                        price_element: '#product .price-new, #product .price',
+                                        currency: '{{ currency_code }}',
+                                        ajax_url: 'index.php?route=extension/module/stripe_product_payment/process'
+                                    };
+                                    StripeProductApplePay.init(productData);
+                                }
+                            };
+                            document.head.appendChild(applePayScript);
+                        }
+                    })
+                    .catch(function(error) {
+                        console.error('Failed to load Stripe config:', error);
+                    });
+            })();
             </script>
-            {% endif %}
             ]]></add>
         </operation>
     </file>
