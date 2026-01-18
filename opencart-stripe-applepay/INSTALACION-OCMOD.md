@@ -3,14 +3,14 @@
 ## Descargar e Instalar
 
 ### 1️⃣ Descargar el archivo
-Descarga: **`stripe-applepay-ocmod.zip`** (27KB)
+Descarga: **`stripe-applepay.ocmod.zip`** (27KB)
 
 ### 2️⃣ Instalar en OpenCart
 
 1. **Accede al panel de administración** de tu OpenCart
 2. Ve a **Extensiones → Instalador** (Extensions → Installer)
 3. Haz clic en el botón **"Subir"** (Upload)
-4. Selecciona el archivo **`stripe-applepay-ocmod.zip`**
+4. Selecciona el archivo **`stripe-applepay.ocmod.zip`**
 5. Espera a que se suba (aparecerá mensaje de éxito)
 
 ### 3️⃣ Refrescar modificaciones
