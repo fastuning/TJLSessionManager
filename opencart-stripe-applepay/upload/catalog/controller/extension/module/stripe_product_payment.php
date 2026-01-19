@@ -342,6 +342,8 @@ class ControllerExtensionModuleStripeProductPayment extends Controller {
         $total = $subtotal + $shipping_cost;
 
         $this->log->write('[Stripe Apple Pay] createOrder - Subtotal: ' . $subtotal . '€, Shipping: ' . $shipping_cost . '€, Total: ' . $total . '€');
+        $this->log->write('[Stripe Apple Pay] createOrder - Shipping address received: ' . print_r($shipping_address, true));
+        $this->log->write('[Stripe Apple Pay] createOrder - Billing address received: ' . print_r($billing_address, true));
 
         // Prepare order data
         $order_data = array();
@@ -398,10 +400,17 @@ class ControllerExtensionModuleStripeProductPayment extends Controller {
         $order_data['payment_code'] = 'stripe_applepay';
 
         // Map shipping address from Apple Pay format
-        $shipping_name = isset($shipping_address['name']) ? $shipping_address['name'] : '';
+        $shipping_name = isset($shipping_address['name']) ? trim($shipping_address['name']) : '';
+
+        // If shipping name is empty, use billing name as fallback
+        if (empty($shipping_name)) {
+            $shipping_name = isset($billing_address['name']) ? trim($billing_address['name']) : 'Guest Customer';
+            $this->log->write('[Stripe Apple Pay] createOrder - Shipping name was empty, using fallback: ' . $shipping_name);
+        }
+
         $shipping_name_parts = explode(' ', $shipping_name, 2);
-        $order_data['shipping_firstname'] = isset($shipping_name_parts[0]) ? $shipping_name_parts[0] : 'Guest';
-        $order_data['shipping_lastname'] = isset($shipping_name_parts[1]) ? $shipping_name_parts[1] : '';
+        $order_data['shipping_firstname'] = !empty($shipping_name_parts[0]) ? $shipping_name_parts[0] : 'Guest';
+        $order_data['shipping_lastname'] = isset($shipping_name_parts[1]) && !empty($shipping_name_parts[1]) ? $shipping_name_parts[1] : 'Customer';
         $order_data['shipping_company'] = '';
 
         // Apple Pay provides addressLines array
@@ -436,7 +445,7 @@ class ControllerExtensionModuleStripeProductPayment extends Controller {
             $order_data['shipping_code'] = '';
         }
 
-        $this->log->write('[Stripe Apple Pay] Order addresses - Shipping: ' . $order_data['shipping_address_1'] . ', ' . $order_data['shipping_city'] . ', ' . $order_data['shipping_country']);
+        $this->log->write('[Stripe Apple Pay] Order addresses - Shipping: ' . $order_data['shipping_firstname'] . ' ' . $order_data['shipping_lastname'] . ', ' . $order_data['shipping_address_1'] . ', ' . $order_data['shipping_city'] . ', ' . $order_data['shipping_country']);
 
         // Products
         $order_data['products'] = array();

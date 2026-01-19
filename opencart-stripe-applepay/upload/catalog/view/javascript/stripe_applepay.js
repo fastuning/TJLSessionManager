@@ -418,7 +418,10 @@ var StripeProductApplePay = (function() {
                     option: getOptions(),
                     // Shipping address from Apple Pay (stored in state)
                     shipping_address: {
-                        name: (state.selectedShippingAddress.givenName || '') + ' ' + (state.selectedShippingAddress.familyName || ''),
+                        // Try recipient first, then givenName+familyName, then billing name as fallback
+                        name: state.selectedShippingAddress.recipient ||
+                              ((state.selectedShippingAddress.givenName || '') + ' ' + (state.selectedShippingAddress.familyName || '')).trim() ||
+                              paymentMethod.billing_details.name || 'Guest',
                         addressLines: state.selectedShippingAddress.addressLines || [],
                         locality: state.selectedShippingAddress.locality || '',
                         administrativeArea: state.selectedShippingAddress.administrativeArea || '',
