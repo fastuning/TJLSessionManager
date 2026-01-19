@@ -148,9 +148,7 @@ class ControllerExtensionModuleStripeProductPayment extends Controller {
             $payment_intent = $this->stripeRequest('payment_intents', array(
                 'amount' => $amount,
                 'currency' => $currency,
-                'automatic_payment_methods' => array(
-                    'enabled' => true,
-                ),
+                'payment_method_types' => array('card'),
                 'metadata' => array(
                     'product_id' => $product_id,
                     'quantity' => $quantity,
