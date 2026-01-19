@@ -113,13 +113,19 @@ class ControllerExtensionModuleStripeProductPayment extends Controller {
 
             if ($country_code) {
                 $this->load->model('localisation/country');
-                $country_info = $this->model_localisation_country->getCountryByIsoCode2($country_code);
 
-                if ($country_info && $country_info['country_id'] == 195) {
-                    // Spain - add fixed shipping
-                    $shipping_cost = 4.95;
-                    $shipping_country = 'ES';
-                    $this->log->write('[Stripe Apple Pay] createPaymentIntent - Shipping added for Spain: ' . $shipping_cost . '€');
+                // Get country by ISO code 2 using direct query
+                $query = $this->db->query("SELECT * FROM " . DB_PREFIX . "country WHERE iso_code_2 = '" . $this->db->escape($country_code) . "' LIMIT 1");
+
+                if ($query->num_rows) {
+                    $country_info = $query->row;
+
+                    if ($country_info && $country_info['country_id'] == 195) {
+                        // Spain - add fixed shipping
+                        $shipping_cost = 4.95;
+                        $shipping_country = 'ES';
+                        $this->log->write('[Stripe Apple Pay] createPaymentIntent - Shipping added for Spain: ' . $shipping_cost . '€');
+                    }
                 }
             }
 
@@ -241,14 +247,17 @@ class ControllerExtensionModuleStripeProductPayment extends Controller {
 
             // Load country model to convert code to ID
             $this->load->model('localisation/country');
-            $country_info = $this->model_localisation_country->getCountryByIsoCode2($country_code);
 
-            if (!$country_info) {
+            // Get country by ISO code 2 using direct query
+            $query = $this->db->query("SELECT * FROM " . DB_PREFIX . "country WHERE iso_code_2 = '" . $this->db->escape($country_code) . "' LIMIT 1");
+
+            if (!$query->num_rows) {
                 $this->log->write('[Stripe Apple Pay] ERROR: Unknown country code: ' . $country_code);
                 $json['error'] = 'Shipping not available for this country';
                 return $json;
             }
 
+            $country_info = $query->row;
             $country_id = $country_info['country_id'];
 
             // Only support Spain (country_id = 195)
@@ -347,8 +356,9 @@ class ControllerExtensionModuleStripeProductPayment extends Controller {
 
         // Convert billing country code to country_id
         if ($order_data['payment_country']) {
-            $country_info = $this->model_localisation_country->getCountryByIsoCode2($order_data['payment_country']);
-            if ($country_info) {
+            $query = $this->db->query("SELECT * FROM " . DB_PREFIX . "country WHERE iso_code_2 = '" . $this->db->escape($order_data['payment_country']) . "' LIMIT 1");
+            if ($query->num_rows) {
+                $country_info = $query->row;
                 $order_data['payment_country_id'] = $country_info['country_id'];
                 $order_data['payment_country'] = $country_info['name'];
             }
@@ -378,8 +388,9 @@ class ControllerExtensionModuleStripeProductPayment extends Controller {
 
         // Convert shipping country code to country_id
         if ($order_data['shipping_country']) {
-            $country_info = $this->model_localisation_country->getCountryByIsoCode2($order_data['shipping_country']);
-            if ($country_info) {
+            $query = $this->db->query("SELECT * FROM " . DB_PREFIX . "country WHERE iso_code_2 = '" . $this->db->escape($order_data['shipping_country']) . "' LIMIT 1");
+            if ($query->num_rows) {
+                $country_info = $query->row;
                 $order_data['shipping_country_id'] = $country_info['country_id'];
                 $order_data['shipping_country'] = $country_info['name'];
             }
