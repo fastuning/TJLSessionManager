@@ -203,10 +203,22 @@ class ControllerExtensionModuleStripeProductPayment extends Controller {
                 return $json;
             }
 
+            $this->log->write('[Stripe Apple Pay] confirmPayment - Retrieving payment intent: ' . $payment_intent_id);
+
             // Retrieve payment intent from Stripe
             $payment_intent = $this->stripeRequest('payment_intents/' . $payment_intent_id, array(), 'GET');
 
-            if ($payment_intent->status == 'succeeded') {
+            // Check for Stripe API errors
+            if (isset($payment_intent->error)) {
+                $error_msg = isset($payment_intent->error->message) ? $payment_intent->error->message : 'Unknown Stripe error';
+                $this->log->write('[Stripe Apple Pay] confirmPayment - Stripe API ERROR: ' . $error_msg);
+                $json['error'] = 'Payment verification error: ' . $error_msg;
+                return $json;
+            }
+
+            $this->log->write('[Stripe Apple Pay] confirmPayment - Payment intent status: ' . (isset($payment_intent->status) ? $payment_intent->status : 'unknown'));
+
+            if (isset($payment_intent->status) && $payment_intent->status == 'succeeded') {
                 // Create order
                 $order_id = $this->createOrder($product_id, $quantity, $option, $shipping_address, $billing_address, $payment_intent);
 
@@ -214,14 +226,19 @@ class ControllerExtensionModuleStripeProductPayment extends Controller {
                     $json['success'] = true;
                     $json['order_id'] = $order_id;
                     $json['redirect'] = $this->url->link('checkout/success', '', true);
+                    $this->log->write('[Stripe Apple Pay] confirmPayment - Order created successfully: ' . $order_id);
                 } else {
+                    $this->log->write('[Stripe Apple Pay] confirmPayment - ERROR: Failed to create order');
                     $json['error'] = 'Failed to create order';
                 }
             } else {
+                $payment_status = isset($payment_intent->status) ? $payment_intent->status : 'unknown';
+                $this->log->write('[Stripe Apple Pay] confirmPayment - ERROR: Payment not completed, status: ' . $payment_status);
                 $json['error'] = 'Payment not completed';
             }
 
         } catch (Exception $e) {
+            $this->log->write('[Stripe Apple Pay] confirmPayment - EXCEPTION: ' . $e->getMessage());
             $json['error'] = $e->getMessage();
         }
 
@@ -459,9 +476,18 @@ class ControllerExtensionModuleStripeProductPayment extends Controller {
         $order_data['marketing_id'] = 0;
         $order_data['tracking'] = '';
         $order_data['language_id'] = $this->config->get('config_language_id');
-        $order_data['currency_id'] = $this->currency->getId($this->session->data['currency']);
-        $order_data['currency_code'] = $this->session->data['currency'];
-        $order_data['currency_value'] = $this->currency->getValue($this->session->data['currency']);
+
+        // Get currency with fallback to avoid PHP Notice
+        $currency_code = 'EUR'; // Default
+        if (isset($this->session->data['currency'])) {
+            $currency_code = $this->session->data['currency'];
+        } elseif ($this->config->get('config_currency')) {
+            $currency_code = $this->config->get('config_currency');
+        }
+
+        $order_data['currency_id'] = $this->currency->getId($currency_code);
+        $order_data['currency_code'] = $currency_code;
+        $order_data['currency_value'] = $this->currency->getValue($currency_code);
         $order_data['ip'] = $this->request->server['REMOTE_ADDR'];
         $order_data['forwarded_ip'] = '';
         $order_data['user_agent'] = isset($this->request->server['HTTP_USER_AGENT']) ? $this->request->server['HTTP_USER_AGENT'] : '';
@@ -495,6 +521,8 @@ class ControllerExtensionModuleStripeProductPayment extends Controller {
 
         $url = 'https://api.stripe.com/v1/' . $endpoint;
 
+        $this->log->write('[Stripe Apple Pay] Stripe API Request - Method: ' . $method . ', Endpoint: ' . $endpoint);
+
         $ch = curl_init();
 
         curl_setopt($ch, CURLOPT_URL, $url);
@@ -504,6 +532,8 @@ class ControllerExtensionModuleStripeProductPayment extends Controller {
         if ($method == 'POST') {
             curl_setopt($ch, CURLOPT_POST, true);
             curl_setopt($ch, CURLOPT_POSTFIELDS, http_build_query($this->flattenArray($data)));
+        } elseif ($method == 'GET') {
+            curl_setopt($ch, CURLOPT_HTTPGET, true);
         }
 
         $response = curl_exec($ch);
@@ -511,6 +541,8 @@ class ControllerExtensionModuleStripeProductPayment extends Controller {
         $curl_error = curl_error($ch);
 
         curl_close($ch);
+
+        $this->log->write('[Stripe Apple Pay] Stripe API Response - HTTP Code: ' . $http_code);
 
         // Check for curl errors
         if ($response === false) {

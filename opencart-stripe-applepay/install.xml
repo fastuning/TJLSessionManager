@@ -2,7 +2,7 @@
 <modification>
     <name>Stripe Apple Pay - Product Page Button</name>
     <code>stripe_applepay_product_button</code>
-    <version>1.0.13</version>
+    <version>1.0.14</version>
     <author>Custom Development</author>
     <link>https://www.stripe.com</link>
 
@@ -84,7 +84,7 @@
                         function loadStripeApplePay() {
                             console.log('[Stripe] Loading stripe_applepay.js...');
                             var applePayScript = document.createElement('script');
-                            applePayScript.src = 'catalog/view/javascript/stripe_applepay.js?v=113';
+                            applePayScript.src = 'catalog/view/javascript/stripe_applepay.js?v=114';
                             applePayScript.onload = function() {
                                 console.log('[Stripe] stripe_applepay.js loaded');
                                 if (typeof StripeProductApplePay !== 'undefined') {
