@@ -79,6 +79,48 @@ var StripeProductApplePay = (function() {
     }
 
     /**
+     * Get product name from page
+     */
+    function getProductName() {
+        // Try multiple selectors for product name
+        var nameElement = document.querySelector('h1.product-name, h1.title, .product-info h1, #content h1');
+        if (nameElement) {
+            return nameElement.textContent.trim();
+        }
+        return 'Producto';
+    }
+
+    /**
+     * Get selected options text for display
+     */
+    function getSelectedOptionsText() {
+        var optionsText = [];
+        var optionSelects = document.querySelectorAll('select[name^="option"]');
+
+        optionSelects.forEach(function(select) {
+            if (select.value && select.value !== '') {
+                var selectedOption = select.options[select.selectedIndex];
+                var label = select.closest('.form-group').querySelector('label');
+                if (label && selectedOption && selectedOption.text !== '--- Seleccionar ---') {
+                    optionsText.push(label.textContent.trim() + ': ' + selectedOption.text);
+                }
+            }
+        });
+
+        // Handle radio buttons
+        var optionRadios = document.querySelectorAll('input[name^="option"][type="radio"]:checked');
+        optionRadios.forEach(function(radio) {
+            var label = radio.closest('.form-group').querySelector('label.control-label');
+            var radioLabel = document.querySelector('label[for="' + radio.id + '"]');
+            if (label && radioLabel) {
+                optionsText.push(label.textContent.trim() + ': ' + radioLabel.textContent.trim());
+            }
+        });
+
+        return optionsText.length > 0 ? optionsText.join(', ') : '';
+    }
+
+    /**
      * Validate required options are selected
      */
     function validateRequiredOptions() {
@@ -155,6 +197,20 @@ var StripeProductApplePay = (function() {
 
         console.log('[Stripe] Setting up payment request - Product: €' + productTotal + ', Shipping: €' + shippingCost + ', Total: €' + totalWithShipping);
 
+        // Build display items with product name and options
+        var productName = getProductName();
+        var selectedOptions = getSelectedOptionsText();
+        var productLabel = productName;
+
+        if (selectedOptions) {
+            productLabel += ' (' + selectedOptions + ')';
+        }
+
+        var quantity = getQuantity();
+        if (quantity > 1) {
+            productLabel += ' x' + quantity;
+        }
+
         config.paymentRequest = config.stripe.paymentRequest({
             country: 'ES',
             currency: config.productData.currency.toLowerCase() || 'eur',
@@ -164,11 +220,11 @@ var StripeProductApplePay = (function() {
             },
             displayItems: [
                 {
-                    label: 'Producto',
+                    label: productLabel,
                     amount: Math.round(productTotal * 100)
                 },
                 {
-                    label: 'Envío estándar',
+                    label: 'Envío estándar a España',
                     amount: Math.round(shippingCost * 100)
                 }
             ],
@@ -325,14 +381,39 @@ var StripeProductApplePay = (function() {
      * Update payment request with new total
      */
     function updatePaymentRequest() {
-        var total = calculateTotal();
-        var amount = Math.round(total * 100);
+        var productTotal = calculateTotal();
+        var shippingCost = state.shippingCost;
+        var totalWithShipping = productTotal + shippingCost;
+
+        // Build display items with updated product info
+        var productName = getProductName();
+        var selectedOptions = getSelectedOptionsText();
+        var productLabel = productName;
+
+        if (selectedOptions) {
+            productLabel += ' (' + selectedOptions + ')';
+        }
+
+        var quantity = getQuantity();
+        if (quantity > 1) {
+            productLabel += ' x' + quantity;
+        }
 
         config.paymentRequest.update({
             total: {
-                label: 'Total',
-                amount: amount
-            }
+                label: 'Total (incl. envío)',
+                amount: Math.round(totalWithShipping * 100)
+            },
+            displayItems: [
+                {
+                    label: productLabel,
+                    amount: Math.round(productTotal * 100)
+                },
+                {
+                    label: 'Envío estándar a España',
+                    amount: Math.round(shippingCost * 100)
+                }
+            ]
         });
     }
 
@@ -364,6 +445,20 @@ var StripeProductApplePay = (function() {
 
         console.log('[Stripe] Valid Spain address, returning fixed shipping - Product: €' + productTotal + ', Shipping: €' + shippingCost + ', Total: €' + total);
 
+        // Build display items with product info
+        var productName = getProductName();
+        var selectedOptions = getSelectedOptionsText();
+        var productLabel = productName;
+
+        if (selectedOptions) {
+            productLabel += ' (' + selectedOptions + ')';
+        }
+
+        var quantity = getQuantity();
+        if (quantity > 1) {
+            productLabel += ' x' + quantity;
+        }
+
         event.updateWith({
             status: 'success',
             shippingOptions: [
@@ -380,11 +475,11 @@ var StripeProductApplePay = (function() {
             },
             displayItems: [
                 {
-                    label: 'Producto',
+                    label: productLabel,
                     amount: Math.round(productTotal * 100)
                 },
                 {
-                    label: 'Envío estándar',
+                    label: 'Envío estándar a España',
                     amount: 495
                 }
             ]
