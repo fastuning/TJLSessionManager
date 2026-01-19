@@ -17,7 +17,9 @@ var StripeProductApplePay = (function() {
     var state = {
         selectedShippingAddress: null,
         selectedShippingOption: null,
-        shippingCost: 4.95
+        shippingCost: 4.95,
+        applePayButton: null,
+        applePayButtonMounted: false
     };
 
     /**
@@ -74,6 +76,49 @@ var StripeProductApplePay = (function() {
         });
 
         return options;
+    }
+
+    /**
+     * Validate required options are selected
+     */
+    function validateRequiredOptions() {
+        var requiredOptions = document.querySelectorAll('.product-option-select.required select, .product-option-radio.required, .product-option-checkbox.required');
+        var allValid = true;
+        var missingOptions = [];
+
+        requiredOptions.forEach(function(optionGroup) {
+            var isValid = false;
+
+            if (optionGroup.tagName === 'SELECT') {
+                // For select dropdowns
+                isValid = optionGroup.value !== '';
+                if (!isValid) {
+                    var label = optionGroup.closest('.form-group').querySelector('label');
+                    missingOptions.push(label ? label.textContent.trim() : 'Option');
+                }
+            } else {
+                // For radio/checkbox groups
+                var inputs = optionGroup.querySelectorAll('input[type="radio"], input[type="checkbox"]');
+                inputs.forEach(function(input) {
+                    if (input.checked) {
+                        isValid = true;
+                    }
+                });
+                if (!isValid) {
+                    var label = optionGroup.querySelector('label');
+                    missingOptions.push(label ? label.textContent.trim() : 'Option');
+                }
+            }
+
+            if (!isValid) {
+                allValid = false;
+            }
+        });
+
+        return {
+            valid: allValid,
+            missing: missingOptions
+        };
     }
 
     /**
@@ -203,15 +248,48 @@ var StripeProductApplePay = (function() {
         // Check if button can be mounted
         config.paymentRequest.canMakePayment().then(function(result) {
             if (result) {
-                prButton.mount('#stripe-applepay-button-container');
+                // Store button reference
+                state.applePayButton = prButton;
 
-                // Show divider
-                var divider = document.getElementById('stripe-applepay-divider');
+                // Check if required options are valid before mounting
+                updateButtonVisibility();
+            }
+        });
+    }
+
+    /**
+     * Update Apple Pay button visibility based on required options
+     */
+    function updateButtonVisibility() {
+        if (!state.applePayButton) return;
+
+        var validation = validateRequiredOptions();
+        var container = document.getElementById('stripe-applepay-button-container');
+        var divider = document.getElementById('stripe-applepay-divider');
+
+        if (validation.valid) {
+            // Mount button if not already mounted
+            if (!state.applePayButtonMounted) {
+                console.log('[Stripe] Mounting Apple Pay button - all required options selected');
+                state.applePayButton.mount('#stripe-applepay-button-container');
+                state.applePayButtonMounted = true;
+
                 if (divider) {
                     divider.style.display = 'block';
                 }
             }
-        });
+        } else {
+            // Unmount button if mounted
+            if (state.applePayButtonMounted) {
+                console.log('[Stripe] Unmounting Apple Pay button - missing required options:', validation.missing);
+                state.applePayButton.unmount();
+                state.applePayButtonMounted = false;
+
+                if (divider) {
+                    divider.style.display = 'none';
+                }
+            }
+        }
     }
 
     /**
@@ -227,7 +305,10 @@ var StripeProductApplePay = (function() {
         // Update total when options change
         var optionInputs = document.querySelectorAll('input[name^="option"], select[name^="option"]');
         optionInputs.forEach(function(input) {
-            input.addEventListener('change', updatePaymentRequest);
+            input.addEventListener('change', function() {
+                updateButtonVisibility();
+                updatePaymentRequest();
+            });
         });
 
         // Handle shipping address change
@@ -336,6 +417,15 @@ var StripeProductApplePay = (function() {
         console.log('[Stripe] Complete event object:', event);
 
         var paymentMethod = event.paymentMethod;
+
+        // Validate required options before proceeding
+        var validation = validateRequiredOptions();
+        if (!validation.valid) {
+            console.error('[Stripe] ERROR: Required options not selected:', validation.missing);
+            event.complete('fail');
+            alert('Por favor, selecciona todas las opciones requeridas: ' + validation.missing.join(', '));
+            return;
+        }
 
         // Update state with COMPLETE shipping address from paymentmethod event
         // Apple Pay provides full address only after user confirms payment
