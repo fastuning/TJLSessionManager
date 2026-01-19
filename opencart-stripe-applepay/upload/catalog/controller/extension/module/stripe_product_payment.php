@@ -59,6 +59,8 @@ class ControllerExtensionModuleStripeProductPayment extends Controller {
     private function createPaymentIntent($data) {
         $json = array();
 
+        $this->log->write('[Stripe Apple Pay] createPaymentIntent called with data: ' . print_r($data, true));
+
         try {
             $this->load->model('catalog/product');
             $this->load->model('account/customer');
@@ -128,7 +130,14 @@ class ControllerExtensionModuleStripeProductPayment extends Controller {
             // Create Stripe Payment Intent with shipping included
             $secret_key = $this->config->get('payment_stripe_applepay_secret_key');
             $amount = (int)($total * 100); // Convert to cents
-            $currency = strtolower($this->session->data['currency']);
+
+            // Get currency with fallback to avoid PHP Notice
+            $currency = 'eur'; // Default
+            if (isset($this->session->data['currency'])) {
+                $currency = strtolower($this->session->data['currency']);
+            } elseif ($this->config->get('config_currency')) {
+                $currency = strtolower($this->config->get('config_currency'));
+            }
 
             $payment_intent = $this->stripeRequest('payment_intents', array(
                 'amount' => $amount,
@@ -146,6 +155,14 @@ class ControllerExtensionModuleStripeProductPayment extends Controller {
                 )
             ));
 
+            // Check for Stripe API errors
+            if (isset($payment_intent->error)) {
+                $error_msg = isset($payment_intent->error->message) ? $payment_intent->error->message : 'Unknown Stripe error';
+                $this->log->write('[Stripe Apple Pay] Stripe API ERROR: ' . $error_msg);
+                $json['error'] = 'Payment error: ' . $error_msg;
+                return $json;
+            }
+
             if (isset($payment_intent->id)) {
                 $json['client_secret'] = $payment_intent->client_secret;
                 $json['amount'] = $amount;
@@ -154,7 +171,7 @@ class ControllerExtensionModuleStripeProductPayment extends Controller {
                 $json['shipping_cost'] = $shipping_cost;
                 $this->log->write('[Stripe Apple Pay] Payment intent created: ' . $payment_intent->id . ' - Amount: ' . $amount . ' cents');
             } else {
-                $this->log->write('[Stripe Apple Pay] ERROR: Failed to create payment intent');
+                $this->log->write('[Stripe Apple Pay] ERROR: Failed to create payment intent - Response: ' . print_r($payment_intent, true));
                 $json['error'] = 'Failed to create payment intent';
             }
 
@@ -462,6 +479,11 @@ class ControllerExtensionModuleStripeProductPayment extends Controller {
     private function stripeRequest($endpoint, $data = array(), $method = 'POST') {
         $secret_key = $this->config->get('payment_stripe_applepay_secret_key');
 
+        if (!$secret_key) {
+            $this->log->write('[Stripe Apple Pay] ERROR: No secret key configured');
+            return (object)array('error' => array('message' => 'Stripe not configured'));
+        }
+
         $url = 'https://api.stripe.com/v1/' . $endpoint;
 
         $ch = curl_init();
@@ -476,10 +498,31 @@ class ControllerExtensionModuleStripeProductPayment extends Controller {
         }
 
         $response = curl_exec($ch);
+        $http_code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        $curl_error = curl_error($ch);
 
         curl_close($ch);
 
-        return json_decode($response);
+        // Check for curl errors
+        if ($response === false) {
+            $this->log->write('[Stripe Apple Pay] CURL ERROR: ' . $curl_error);
+            return (object)array('error' => array('message' => 'Network error: ' . $curl_error));
+        }
+
+        // Check HTTP status code
+        if ($http_code >= 400) {
+            $this->log->write('[Stripe Apple Pay] HTTP ERROR ' . $http_code . ': ' . $response);
+        }
+
+        $decoded = json_decode($response);
+
+        // Check for JSON decode errors
+        if ($decoded === null && json_last_error() !== JSON_ERROR_NONE) {
+            $this->log->write('[Stripe Apple Pay] JSON DECODE ERROR: ' . json_last_error_msg() . ' - Response: ' . substr($response, 0, 500));
+            return (object)array('error' => array('message' => 'Invalid API response'));
+        }
+
+        return $decoded;
     }
 
     private function flattenArray($array, $prefix = '') {
