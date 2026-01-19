@@ -106,10 +106,19 @@ class ControllerExtensionModuleStripeProductPayment extends Controller {
 
             // Add option prices
             if ($option) {
-                foreach ($option as $product_option_id => $value) {
-                    $product_option_value_info = $this->model_catalog_product->getProductOptionValue($product_id, $value);
+                foreach ($option as $product_option_id => $option_value_id) {
+                    // Get product option value info using direct database query
+                    $query = $this->db->query("
+                        SELECT pov.option_value_id, pov.price, pov.price_prefix
+                        FROM " . DB_PREFIX . "product_option_value pov
+                        WHERE pov.product_id = '" . (int)$product_id . "'
+                        AND pov.product_option_id = '" . (int)$product_option_id . "'
+                        AND pov.option_value_id = '" . (int)$option_value_id . "'
+                    ");
 
-                    if ($product_option_value_info) {
+                    if ($query->num_rows) {
+                        $product_option_value_info = $query->row;
+
                         if ($product_option_value_info['price_prefix'] == '+') {
                             $price += $this->tax->calculate($product_option_value_info['price'], $product_info['tax_class_id'], $this->config->get('config_tax'));
                         } elseif ($product_option_value_info['price_prefix'] == '-') {
