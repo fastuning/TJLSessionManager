@@ -80,9 +80,9 @@
             <label class="col-sm-2 control-label" for="input-button-style">{{ entry_button_style }}</label>
             <div class="col-sm-10">
               <select name="payment_stripe_applepay_button_style" id="input-button-style" class="form-control">
-                <option value="black" {% if payment_stripe_applepay_button_style == 'black' %}selected="selected"{% endif %}>Black</option>
-                <option value="white" {% if payment_stripe_applepay_button_style == 'white' %}selected="selected"{% endif %}>White</option>
-                <option value="white-outline" {% if payment_stripe_applepay_button_style == 'white-outline' %}selected="selected"{% endif %}>White Outline</option>
+                <option value="dark" {% if payment_stripe_applepay_button_style == 'dark' or payment_stripe_applepay_button_style == 'black' %}selected="selected"{% endif %}>Dark</option>
+                <option value="light" {% if payment_stripe_applepay_button_style == 'light' or payment_stripe_applepay_button_style == 'white' %}selected="selected"{% endif %}>Light</option>
+                <option value="light-outline" {% if payment_stripe_applepay_button_style == 'light-outline' or payment_stripe_applepay_button_style == 'white-outline' %}selected="selected"{% endif %}>Light Outline</option>
               </select>
             </div>
           </div>

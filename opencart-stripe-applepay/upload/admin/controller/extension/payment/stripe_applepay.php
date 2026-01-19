@@ -150,7 +150,7 @@ class ControllerExtensionPaymentStripeApplepay extends Controller {
             'payment_stripe_applepay_status' => 0,
             'payment_stripe_applepay_test_mode' => 1,
             'payment_stripe_applepay_product_button' => 1,
-            'payment_stripe_applepay_button_style' => 'black',
+            'payment_stripe_applepay_button_style' => 'dark',
             'payment_stripe_applepay_sort_order' => 1
         ));
 
