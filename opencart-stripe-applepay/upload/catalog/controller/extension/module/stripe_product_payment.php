@@ -66,6 +66,7 @@ class ControllerExtensionModuleStripeProductPayment extends Controller {
             $product_id = isset($data['product_id']) ? (int)$data['product_id'] : 0;
             $quantity = isset($data['quantity']) ? (int)$data['quantity'] : 1;
             $option = isset($data['option']) ? $data['option'] : array();
+            $country_code = isset($data['country']) ? strtoupper($data['country']) : '';
 
             if (!$product_id) {
                 $json['error'] = 'Invalid product';
@@ -79,7 +80,7 @@ class ControllerExtensionModuleStripeProductPayment extends Controller {
                 return $json;
             }
 
-            // Calculate total
+            // Calculate product price
             $price = $this->tax->calculate($product_info['price'], $product_info['tax_class_id'], $this->config->get('config_tax'));
 
             // Check for special price
@@ -102,9 +103,29 @@ class ControllerExtensionModuleStripeProductPayment extends Controller {
                 }
             }
 
-            $total = $price * $quantity;
+            $subtotal = $price * $quantity;
 
-            // Create Stripe Payment Intent
+            // Calculate shipping
+            $shipping_cost = 0;
+            $shipping_country = '';
+
+            if ($country_code) {
+                $this->load->model('localisation/country');
+                $country_info = $this->model_localisation_country->getCountryByIsoCode2($country_code);
+
+                if ($country_info && $country_info['country_id'] == 195) {
+                    // Spain - add fixed shipping
+                    $shipping_cost = 4.95;
+                    $shipping_country = 'ES';
+                    $this->log->write('[Stripe Apple Pay] createPaymentIntent - Shipping added for Spain: ' . $shipping_cost . '€');
+                }
+            }
+
+            $total = $subtotal + $shipping_cost;
+
+            $this->log->write('[Stripe Apple Pay] createPaymentIntent - Subtotal: ' . $subtotal . '€, Shipping: ' . $shipping_cost . '€, Total: ' . $total . '€');
+
+            // Create Stripe Payment Intent with shipping included
             $secret_key = $this->config->get('payment_stripe_applepay_secret_key');
             $amount = (int)($total * 100); // Convert to cents
             $currency = strtolower($this->session->data['currency']);
@@ -119,6 +140,9 @@ class ControllerExtensionModuleStripeProductPayment extends Controller {
                     'product_id' => $product_id,
                     'quantity' => $quantity,
                     'product_name' => $product_info['name'],
+                    'subtotal' => number_format($subtotal, 2, '.', ''),
+                    'shipping_cost' => number_format($shipping_cost, 2, '.', ''),
+                    'shipping_country' => $shipping_country
                 )
             ));
 
@@ -127,11 +151,15 @@ class ControllerExtensionModuleStripeProductPayment extends Controller {
                 $json['amount'] = $amount;
                 $json['currency'] = $currency;
                 $json['product_name'] = $product_info['name'];
+                $json['shipping_cost'] = $shipping_cost;
+                $this->log->write('[Stripe Apple Pay] Payment intent created: ' . $payment_intent->id . ' - Amount: ' . $amount . ' cents');
             } else {
+                $this->log->write('[Stripe Apple Pay] ERROR: Failed to create payment intent');
                 $json['error'] = 'Failed to create payment intent';
             }
 
         } catch (Exception $e) {
+            $this->log->write('[Stripe Apple Pay] ERROR in createPaymentIntent: ' . $e->getMessage());
             $json['error'] = $e->getMessage();
         }
 
@@ -183,54 +211,50 @@ class ControllerExtensionModuleStripeProductPayment extends Controller {
         $json = array();
 
         try {
-            $this->load->model('setting/extension');
-            $this->load->model('catalog/product');
+            // Get country code from Apple Pay (e.g., 'ES')
+            $country_code = isset($data['country']) ? strtoupper($data['country']) : '';
 
-            $product_id = isset($data['product_id']) ? (int)$data['product_id'] : 0;
-            $quantity = isset($data['quantity']) ? (int)$data['quantity'] : 1;
-            $country = isset($data['country']) ? $data['country'] : '';
-            $postcode = isset($data['postcode']) ? $data['postcode'] : '';
+            $this->log->write('[Stripe Apple Pay] getShippingOptions - Country: ' . $country_code);
 
-            $product_info = $this->model_catalog_product->getProduct($product_id);
-
-            if (!$product_info) {
-                $json['error'] = 'Product not found';
+            if (!$country_code) {
+                $this->log->write('[Stripe Apple Pay] ERROR: No country code provided');
+                $json['error'] = 'Country required';
                 return $json;
             }
 
-            // Get shipping methods
-            $shipping_methods = array();
+            // Load country model to convert code to ID
+            $this->load->model('localisation/country');
+            $country_info = $this->model_localisation_country->getCountryByIsoCode2($country_code);
 
-            $results = $this->model_setting_extension->getExtensions('shipping');
-
-            foreach ($results as $result) {
-                if ($this->config->get('shipping_' . $result['code'] . '_status')) {
-                    $this->load->model('extension/shipping/' . $result['code']);
-
-                    $quote = $this->{'model_extension_shipping_' . $result['code']}->getQuote(array(
-                        'country_id' => $country,
-                        'postcode' => $postcode
-                    ));
-
-                    if ($quote) {
-                        $shipping_methods[] = $quote;
-                    }
-                }
+            if (!$country_info) {
+                $this->log->write('[Stripe Apple Pay] ERROR: Unknown country code: ' . $country_code);
+                $json['error'] = 'Shipping not available for this country';
+                return $json;
             }
 
-            $json['shipping_options'] = array();
+            $country_id = $country_info['country_id'];
 
-            foreach ($shipping_methods as $shipping_method) {
-                foreach ($shipping_method['quote'] as $quote) {
-                    $json['shipping_options'][] = array(
-                        'id' => $quote['code'],
-                        'label' => $shipping_method['title'] . ' - ' . $quote['title'],
-                        'amount' => (int)($quote['cost'] * 100)
-                    );
-                }
+            // Only support Spain (country_id = 195)
+            if ($country_id != 195) {
+                $this->log->write('[Stripe Apple Pay] ERROR: Shipping not available for country_id: ' . $country_id . ' (' . $country_info['name'] . ')');
+                $json['error'] = 'Currently we only ship to Spain';
+                return $json;
             }
+
+            // Return fixed shipping for Spain
+            $json['shipping_options'] = array(
+                array(
+                    'id' => 'flat_rate_spain',
+                    'label' => 'Envío estándar',
+                    'amount' => 495,  // 4.95€ in cents
+                    'detail' => 'Entrega en 3-5 días laborables'
+                )
+            );
+
+            $this->log->write('[Stripe Apple Pay] Shipping options returned for Spain: 4.95€');
 
         } catch (Exception $e) {
+            $this->log->write('[Stripe Apple Pay] ERROR in getShippingOptions: ' . $e->getMessage());
             $json['error'] = $e->getMessage();
         }
 
@@ -240,10 +264,12 @@ class ControllerExtensionModuleStripeProductPayment extends Controller {
     private function createOrder($product_id, $quantity, $option, $shipping_address, $billing_address, $payment_intent) {
         $this->load->model('catalog/product');
         $this->load->model('checkout/order');
+        $this->load->model('localisation/country');
 
         $product_info = $this->model_catalog_product->getProduct($product_id);
 
         if (!$product_info) {
+            $this->log->write('[Stripe Apple Pay] ERROR: Product not found: ' . $product_id);
             return false;
         }
 
@@ -254,7 +280,13 @@ class ControllerExtensionModuleStripeProductPayment extends Controller {
             $price = $this->tax->calculate($product_info['special'], $product_info['tax_class_id'], $this->config->get('config_tax'));
         }
 
-        $total = $price * $quantity;
+        $subtotal = $price * $quantity;
+
+        // Get shipping cost from payment intent metadata
+        $shipping_cost = isset($payment_intent->metadata->shipping_cost) ? (float)$payment_intent->metadata->shipping_cost : 0;
+        $total = $subtotal + $shipping_cost;
+
+        $this->log->write('[Stripe Apple Pay] createOrder - Subtotal: ' . $subtotal . '€, Shipping: ' . $shipping_cost . '€, Total: ' . $total . '€');
 
         // Prepare order data
         $order_data = array();
@@ -282,37 +314,72 @@ class ControllerExtensionModuleStripeProductPayment extends Controller {
             $order_data['telephone'] = isset($billing_address['phone']) ? $billing_address['phone'] : '';
         }
 
-        // Payment address
-        $order_data['payment_firstname'] = isset($billing_address['name']) ? $billing_address['name'] : '';
-        $order_data['payment_lastname'] = '';
+        // Map billing address from Stripe PaymentMethod billing_details format
+        $billing_name_parts = explode(' ', isset($billing_address['name']) ? $billing_address['name'] : '', 2);
+        $order_data['payment_firstname'] = isset($billing_name_parts[0]) ? $billing_name_parts[0] : 'Guest';
+        $order_data['payment_lastname'] = isset($billing_name_parts[1]) ? $billing_name_parts[1] : '';
         $order_data['payment_company'] = '';
-        $order_data['payment_address_1'] = isset($billing_address['address_line1']) ? $billing_address['address_line1'] : '';
-        $order_data['payment_address_2'] = isset($billing_address['address_line2']) ? $billing_address['address_line2'] : '';
-        $order_data['payment_city'] = isset($billing_address['city']) ? $billing_address['city'] : '';
-        $order_data['payment_postcode'] = isset($billing_address['postal_code']) ? $billing_address['postal_code'] : '';
-        $order_data['payment_zone'] = isset($billing_address['state']) ? $billing_address['state'] : '';
+        $order_data['payment_address_1'] = isset($billing_address['address']['line1']) ? $billing_address['address']['line1'] : '';
+        $order_data['payment_address_2'] = isset($billing_address['address']['line2']) ? $billing_address['address']['line2'] : '';
+        $order_data['payment_city'] = isset($billing_address['address']['city']) ? $billing_address['address']['city'] : '';
+        $order_data['payment_postcode'] = isset($billing_address['address']['postal_code']) ? $billing_address['address']['postal_code'] : '';
+        $order_data['payment_zone'] = isset($billing_address['address']['state']) ? $billing_address['address']['state'] : '';
         $order_data['payment_zone_id'] = 0;
-        $order_data['payment_country'] = isset($billing_address['country']) ? $billing_address['country'] : '';
+        $order_data['payment_country'] = isset($billing_address['address']['country']) ? $billing_address['address']['country'] : '';
         $order_data['payment_country_id'] = 0;
+
+        // Convert billing country code to country_id
+        if ($order_data['payment_country']) {
+            $country_info = $this->model_localisation_country->getCountryByIsoCode2($order_data['payment_country']);
+            if ($country_info) {
+                $order_data['payment_country_id'] = $country_info['country_id'];
+                $order_data['payment_country'] = $country_info['name'];
+            }
+        }
+
         $order_data['payment_address_format'] = '';
         $order_data['payment_method'] = 'Stripe Apple Pay';
         $order_data['payment_code'] = 'stripe_applepay';
 
-        // Shipping address
-        $order_data['shipping_firstname'] = isset($shipping_address['name']) ? $shipping_address['name'] : '';
-        $order_data['shipping_lastname'] = '';
+        // Map shipping address from Apple Pay format
+        $shipping_name = isset($shipping_address['name']) ? $shipping_address['name'] : '';
+        $shipping_name_parts = explode(' ', $shipping_name, 2);
+        $order_data['shipping_firstname'] = isset($shipping_name_parts[0]) ? $shipping_name_parts[0] : 'Guest';
+        $order_data['shipping_lastname'] = isset($shipping_name_parts[1]) ? $shipping_name_parts[1] : '';
         $order_data['shipping_company'] = '';
-        $order_data['shipping_address_1'] = isset($shipping_address['address_line1']) ? $shipping_address['address_line1'] : '';
-        $order_data['shipping_address_2'] = isset($shipping_address['address_line2']) ? $shipping_address['address_line2'] : '';
-        $order_data['shipping_city'] = isset($shipping_address['city']) ? $shipping_address['city'] : '';
-        $order_data['shipping_postcode'] = isset($shipping_address['postal_code']) ? $shipping_address['postal_code'] : '';
-        $order_data['shipping_zone'] = isset($shipping_address['state']) ? $shipping_address['state'] : '';
+
+        // Apple Pay provides addressLines array
+        $address_lines = isset($shipping_address['addressLines']) ? $shipping_address['addressLines'] : array();
+        $order_data['shipping_address_1'] = isset($address_lines[0]) ? $address_lines[0] : '';
+        $order_data['shipping_address_2'] = isset($address_lines[1]) ? $address_lines[1] : '';
+        $order_data['shipping_city'] = isset($shipping_address['locality']) ? $shipping_address['locality'] : '';
+        $order_data['shipping_postcode'] = isset($shipping_address['postalCode']) ? $shipping_address['postalCode'] : '';
+        $order_data['shipping_zone'] = isset($shipping_address['administrativeArea']) ? $shipping_address['administrativeArea'] : '';
         $order_data['shipping_zone_id'] = 0;
-        $order_data['shipping_country'] = isset($shipping_address['country']) ? $shipping_address['country'] : '';
+        $order_data['shipping_country'] = isset($shipping_address['countryCode']) ? $shipping_address['countryCode'] : '';
         $order_data['shipping_country_id'] = 0;
+
+        // Convert shipping country code to country_id
+        if ($order_data['shipping_country']) {
+            $country_info = $this->model_localisation_country->getCountryByIsoCode2($order_data['shipping_country']);
+            if ($country_info) {
+                $order_data['shipping_country_id'] = $country_info['country_id'];
+                $order_data['shipping_country'] = $country_info['name'];
+            }
+        }
+
         $order_data['shipping_address_format'] = '';
-        $order_data['shipping_method'] = 'Standard Shipping';
-        $order_data['shipping_code'] = 'flat.flat';
+
+        // Set shipping method
+        if ($shipping_cost > 0) {
+            $order_data['shipping_method'] = 'Envío estándar';
+            $order_data['shipping_code'] = 'flat_rate_spain';
+        } else {
+            $order_data['shipping_method'] = '';
+            $order_data['shipping_code'] = '';
+        }
+
+        $this->log->write('[Stripe Apple Pay] Order addresses - Shipping: ' . $order_data['shipping_address_1'] . ', ' . $order_data['shipping_city'] . ', ' . $order_data['shipping_country']);
 
         // Products
         $order_data['products'] = array();
@@ -326,7 +393,7 @@ class ControllerExtensionModuleStripeProductPayment extends Controller {
             'quantity' => $quantity,
             'subtract' => $product_info['subtract'],
             'price' => $price,
-            'total' => $total,
+            'total' => $subtotal,
             'tax' => $this->tax->getTax($price, $product_info['tax_class_id']),
             'reward' => $product_info['reward']
         );
@@ -337,9 +404,19 @@ class ControllerExtensionModuleStripeProductPayment extends Controller {
         $order_data['totals'][] = array(
             'code' => 'sub_total',
             'title' => 'Sub-Total',
-            'value' => $total,
+            'value' => $subtotal,
             'sort_order' => 1
         );
+
+        // Add shipping to totals
+        if ($shipping_cost > 0) {
+            $order_data['totals'][] = array(
+                'code' => 'shipping',
+                'title' => 'Envío estándar',
+                'value' => $shipping_cost,
+                'sort_order' => 3
+            );
+        }
 
         $order_data['totals'][] = array(
             'code' => 'total',

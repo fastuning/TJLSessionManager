@@ -14,6 +14,12 @@ var StripeProductApplePay = (function() {
         publishableKey: ''
     };
 
+    var state = {
+        selectedShippingAddress: null,
+        selectedShippingOption: null,
+        shippingCost: 4.95
+    };
+
     /**
      * Initialize the Apple Pay button
      */
@@ -97,30 +103,52 @@ var StripeProductApplePay = (function() {
      * Setup Stripe Payment Request
      */
     function setupPaymentRequest() {
-        var total = calculateTotal();
-        var amount = Math.round(total * 100); // Convert to cents
+        var productTotal = calculateTotal();
+        var shippingCost = state.shippingCost;
+        var totalWithShipping = productTotal + shippingCost;
+        var amount = Math.round(totalWithShipping * 100); // Convert to cents
+
+        console.log('[Stripe] Setting up payment request - Product: €' + productTotal + ', Shipping: €' + shippingCost + ', Total: €' + totalWithShipping);
 
         config.paymentRequest = config.stripe.paymentRequest({
             country: 'ES',
             currency: config.productData.currency.toLowerCase() || 'eur',
             total: {
-                label: 'Total',
+                label: 'Total (incl. envío)',
                 amount: amount
             },
+            displayItems: [
+                {
+                    label: 'Producto',
+                    amount: Math.round(productTotal * 100)
+                },
+                {
+                    label: 'Envío estándar',
+                    amount: Math.round(shippingCost * 100)
+                }
+            ],
             requestPayerName: true,
             requestPayerEmail: true,
             requestPayerPhone: true,
             requestShipping: true,
-            shippingOptions: []
+            shippingOptions: [
+                {
+                    id: 'flat_rate_spain',
+                    label: 'Envío estándar',
+                    amount: 495,  // 4.95€
+                    detail: 'Entrega en 3-5 días laborables'
+                }
+            ]
         });
 
         // Check if Apple Pay is available
         config.paymentRequest.canMakePayment().then(function(result) {
             if (result && result.applePay) {
+                console.log('[Stripe] Apple Pay is available');
                 displayApplePayButton();
                 attachEventListeners();
             } else {
-                console.log('Apple Pay not available');
+                console.log('[Stripe] Apple Pay not available');
             }
         });
     }
@@ -233,48 +261,52 @@ var StripeProductApplePay = (function() {
     function handleShippingAddressChange(event) {
         var shippingAddress = event.shippingAddress;
 
-        // Fetch shipping options from server
-        fetch(config.productData.ajax_url, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({
-                action: 'get_shipping',
-                product_id: config.productData.product_id,
-                quantity: getQuantity(),
-                country: shippingAddress.country,
-                postcode: shippingAddress.postalCode
-            })
-        })
-        .then(function(response) {
-            return response.json();
-        })
-        .then(function(data) {
-            if (data.shipping_options && data.shipping_options.length > 0) {
-                var total = calculateTotal();
-                var shippingCost = data.shipping_options[0].amount / 100;
-                var newTotal = Math.round((total + shippingCost) * 100);
+        console.log('[Stripe] Shipping address changed:', shippingAddress);
 
-                event.updateWith({
-                    status: 'success',
-                    shippingOptions: data.shipping_options,
-                    total: {
-                        label: 'Total',
-                        amount: newTotal
-                    }
-                });
-            } else {
-                event.updateWith({
-                    status: 'invalid_shipping_address'
-                });
-            }
-        })
-        .catch(function(error) {
-            console.error('Error fetching shipping:', error);
+        // Store shipping address for later use
+        state.selectedShippingAddress = shippingAddress;
+
+        // Validate country is Spain
+        if (shippingAddress.country !== 'ES') {
+            console.log('[Stripe] Invalid country:', shippingAddress.country, '- Only Spain (ES) is supported');
             event.updateWith({
-                status: 'fail'
+                status: 'invalid_shipping_address',
+                shippingOptions: []
             });
+            return;
+        }
+
+        // Return fixed shipping for Spain
+        var productTotal = calculateTotal();
+        var shippingCost = state.shippingCost;
+        var total = productTotal + shippingCost;
+
+        console.log('[Stripe] Valid Spain address, returning fixed shipping - Product: €' + productTotal + ', Shipping: €' + shippingCost + ', Total: €' + total);
+
+        event.updateWith({
+            status: 'success',
+            shippingOptions: [
+                {
+                    id: 'flat_rate_spain',
+                    label: 'Envío estándar',
+                    amount: 495,
+                    detail: 'Entrega en 3-5 días laborables'
+                }
+            ],
+            total: {
+                label: 'Total (incl. envío)',
+                amount: Math.round(total * 100)
+            },
+            displayItems: [
+                {
+                    label: 'Producto',
+                    amount: Math.round(productTotal * 100)
+                },
+                {
+                    label: 'Envío estándar',
+                    amount: 495
+                }
+            ]
         });
     }
 
@@ -300,9 +332,25 @@ var StripeProductApplePay = (function() {
      * Handle payment method
      */
     function handlePaymentMethod(event) {
+        console.log('[Stripe] Payment method received:', event.paymentMethod);
+
         var paymentMethod = event.paymentMethod;
 
-        // Create payment intent
+        // Get shipping info from state
+        if (!state.selectedShippingAddress) {
+            console.error('[Stripe] ERROR: No shipping address selected');
+            event.complete('fail');
+            alert('Please select a shipping address');
+            return;
+        }
+
+        var shippingCost = state.shippingCost;  // Fixed 4.95€
+        var productTotal = calculateTotal();
+        var total = productTotal + shippingCost;
+
+        console.log('[Stripe] Creating payment intent with shipping - Product: €' + productTotal + ', Shipping: €' + shippingCost + ', Total: €' + total);
+
+        // Create payment intent WITH shipping included
         fetch(config.productData.ajax_url, {
             method: 'POST',
             headers: {
@@ -312,7 +360,8 @@ var StripeProductApplePay = (function() {
                 action: 'create_payment_intent',
                 product_id: config.productData.product_id,
                 quantity: getQuantity(),
-                option: getOptions()
+                option: getOptions(),
+                country: state.selectedShippingAddress.country  // Pass country for shipping calculation
             })
         })
         .then(function(response) {
@@ -320,10 +369,13 @@ var StripeProductApplePay = (function() {
         })
         .then(function(data) {
             if (data.error) {
+                console.error('[Stripe] Payment intent error:', data.error);
                 event.complete('fail');
                 alert('Error: ' + data.error);
                 return;
             }
+
+            console.log('[Stripe] Payment intent created, confirming payment...');
 
             // Confirm payment with Stripe
             return config.stripe.confirmCardPayment(
@@ -334,12 +386,15 @@ var StripeProductApplePay = (function() {
         })
         .then(function(result) {
             if (result.error) {
+                console.error('[Stripe] Payment confirmation error:', result.error);
                 event.complete('fail');
                 alert('Payment failed: ' + result.error.message);
                 return;
             }
 
-            // Payment successful, create order
+            console.log('[Stripe] Payment confirmed, creating order...');
+
+            // Payment successful, create order with CORRECT address mapping
             return fetch(config.productData.ajax_url, {
                 method: 'POST',
                 headers: {
@@ -351,8 +406,22 @@ var StripeProductApplePay = (function() {
                     product_id: config.productData.product_id,
                     quantity: getQuantity(),
                     option: getOptions(),
-                    shipping_address: event.shippingAddress,
-                    billing_address: event.payerName
+                    // Shipping address from Apple Pay (stored in state)
+                    shipping_address: {
+                        name: (state.selectedShippingAddress.givenName || '') + ' ' + (state.selectedShippingAddress.familyName || ''),
+                        addressLines: state.selectedShippingAddress.addressLines || [],
+                        locality: state.selectedShippingAddress.locality || '',
+                        administrativeArea: state.selectedShippingAddress.administrativeArea || '',
+                        postalCode: state.selectedShippingAddress.postalCode || '',
+                        countryCode: state.selectedShippingAddress.country || ''
+                    },
+                    // Billing address from Stripe PaymentMethod
+                    billing_address: {
+                        name: paymentMethod.billing_details.name || '',
+                        email: paymentMethod.billing_details.email || '',
+                        phone: paymentMethod.billing_details.phone || '',
+                        address: paymentMethod.billing_details.address || {}
+                    }
                 })
             });
         })
@@ -361,6 +430,7 @@ var StripeProductApplePay = (function() {
         })
         .then(function(data) {
             if (data.success) {
+                console.log('[Stripe] Order created successfully:', data.order_id);
                 event.complete('success');
 
                 // Redirect to success page
@@ -368,12 +438,13 @@ var StripeProductApplePay = (function() {
                     window.location.href = data.redirect;
                 }
             } else {
+                console.error('[Stripe] Order creation failed:', data.error);
                 event.complete('fail');
                 alert('Order creation failed: ' + (data.error || 'Unknown error'));
             }
         })
         .catch(function(error) {
-            console.error('Payment error:', error);
+            console.error('[Stripe] Payment error:', error);
             event.complete('fail');
             alert('Payment processing failed');
         });
