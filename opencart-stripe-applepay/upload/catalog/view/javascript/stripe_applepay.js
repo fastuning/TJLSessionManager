@@ -333,8 +333,19 @@ var StripeProductApplePay = (function() {
      */
     function handlePaymentMethod(event) {
         console.log('[Stripe] Payment method received:', event.paymentMethod);
+        console.log('[Stripe] Complete event object:', event);
 
         var paymentMethod = event.paymentMethod;
+
+        // Update state with COMPLETE shipping address from paymentmethod event
+        // Apple Pay provides full address only after user confirms payment
+        if (event.shippingAddress) {
+            console.log('[Stripe] Updating shipping address with complete data:', event.shippingAddress);
+            state.selectedShippingAddress = event.shippingAddress;
+        } else if (event.shippingContact) {
+            console.log('[Stripe] Updating shipping address with complete data from shippingContact:', event.shippingContact);
+            state.selectedShippingAddress = event.shippingContact;
+        }
 
         // Get shipping info from state
         if (!state.selectedShippingAddress) {
@@ -343,6 +354,8 @@ var StripeProductApplePay = (function() {
             alert('Please select a shipping address');
             return;
         }
+
+        console.log('[Stripe] Final shipping address to be used:', state.selectedShippingAddress);
 
         var shippingCost = state.shippingCost;  // Fixed 4.95€
         var productTotal = calculateTotal();
