@@ -17,6 +17,9 @@ class ControllerExtensionModuleStripeProductPayment extends Controller {
     }
 
     public function process() {
+        // Start output buffering to catch any unexpected output
+        ob_start();
+
         $this->load->language('extension/payment/stripe_applepay');
 
         $json = array();
@@ -24,6 +27,11 @@ class ControllerExtensionModuleStripeProductPayment extends Controller {
         // Verify that the extension is enabled
         if (!$this->config->get('payment_stripe_applepay_status')) {
             $json['error'] = 'Payment method not available';
+            // Clear any output buffer
+            $buffer = ob_get_clean();
+            if (!empty($buffer)) {
+                $this->log->write('[Stripe Apple Pay] WARNING: Unexpected output captured: ' . substr($buffer, 0, 200));
+            }
             $this->response->addHeader('Content-Type: application/json');
             $this->response->setOutput(json_encode($json));
             return;
@@ -50,6 +58,12 @@ class ControllerExtensionModuleStripeProductPayment extends Controller {
                 break;
             default:
                 $json['error'] = 'Invalid action';
+        }
+
+        // Clear any output buffer before sending JSON
+        $buffer = ob_get_clean();
+        if (!empty($buffer)) {
+            $this->log->write('[Stripe Apple Pay] WARNING: Unexpected output captured in process(): ' . substr($buffer, 0, 200));
         }
 
         $this->response->addHeader('Content-Type: application/json');

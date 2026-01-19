@@ -436,7 +436,17 @@ var StripeProductApplePay = (function() {
             });
         })
         .then(function(response) {
-            return response.json();
+            // Capture raw text first for debugging
+            return response.text().then(function(text) {
+                console.log('[Stripe] Raw response from order creation:', text);
+                try {
+                    return JSON.parse(text);
+                } catch (e) {
+                    console.error('[Stripe] Failed to parse JSON:', e);
+                    console.error('[Stripe] Response text (first 500 chars):', text.substring(0, 500));
+                    throw new Error('Invalid JSON response from order creation');
+                }
+            });
         })
         .then(function(data) {
             if (data.success) {
