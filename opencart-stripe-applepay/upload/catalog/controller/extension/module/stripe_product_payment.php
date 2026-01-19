@@ -415,14 +415,27 @@ class ControllerExtensionModuleStripeProductPayment extends Controller {
 
         // Apple Pay provides addressLines array
         $address_lines = isset($shipping_address['addressLines']) ? $shipping_address['addressLines'] : array();
-        $order_data['shipping_address_1'] = isset($address_lines[0]) ? $address_lines[0] : '';
-        $order_data['shipping_address_2'] = isset($address_lines[1]) ? $address_lines[1] : '';
-        $order_data['shipping_city'] = isset($shipping_address['locality']) ? $shipping_address['locality'] : '';
-        $order_data['shipping_postcode'] = isset($shipping_address['postalCode']) ? $shipping_address['postalCode'] : '';
-        $order_data['shipping_zone'] = isset($shipping_address['administrativeArea']) ? $shipping_address['administrativeArea'] : '';
+
+        // Use billing address as fallback when shipping address is incomplete
+        $order_data['shipping_address_1'] = !empty($address_lines[0]) ? $address_lines[0] :
+                                            (isset($billing_address['address']['line1']) ? $billing_address['address']['line1'] : '');
+        $order_data['shipping_address_2'] = !empty($address_lines[1]) ? $address_lines[1] :
+                                            (isset($billing_address['address']['line2']) ? $billing_address['address']['line2'] : '');
+        $order_data['shipping_city'] = !empty($shipping_address['locality']) ? $shipping_address['locality'] :
+                                       (isset($billing_address['address']['city']) ? $billing_address['address']['city'] : '');
+        $order_data['shipping_postcode'] = !empty($shipping_address['postalCode']) ? $shipping_address['postalCode'] :
+                                           (isset($billing_address['address']['postal_code']) ? $billing_address['address']['postal_code'] : '');
+        $order_data['shipping_zone'] = !empty($shipping_address['administrativeArea']) ? $shipping_address['administrativeArea'] :
+                                       (isset($billing_address['address']['state']) ? $billing_address['address']['state'] : '');
         $order_data['shipping_zone_id'] = 0;
-        $order_data['shipping_country'] = isset($shipping_address['countryCode']) ? $shipping_address['countryCode'] : '';
+        $order_data['shipping_country'] = !empty($shipping_address['countryCode']) ? $shipping_address['countryCode'] :
+                                          (isset($billing_address['address']['country']) ? $billing_address['address']['country'] : '');
         $order_data['shipping_country_id'] = 0;
+
+        // Log if we used billing as fallback
+        if (empty($address_lines[0]) && !empty($billing_address['address']['line1'])) {
+            $this->log->write('[Stripe Apple Pay] createOrder - Using billing address as fallback for empty shipping address');
+        }
 
         // Convert shipping country code to country_id
         if ($order_data['shipping_country']) {
@@ -528,8 +541,8 @@ class ControllerExtensionModuleStripeProductPayment extends Controller {
             $this->model_checkout_order->addOrderHistory($order_id, $order_status_id, 'Payment completed via Stripe Apple Pay', true);
         }
 
-        // Update product stock
-        $this->model_catalog_product->updateQuantity($product_id, -$quantity);
+        // Note: Stock is automatically managed by OpenCart when order is created
+        $this->log->write('[Stripe Apple Pay] Order created successfully: ' . $order_id);
 
         return $order_id;
     }
