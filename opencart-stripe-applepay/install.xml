@@ -10,7 +10,7 @@
     <file path="catalog/view/theme/*/template/product/product.twig">
         <operation>
             <search><![CDATA[<a id="button-cart"]]></search>
-            <add position="before"><![CDATA[
+            <add position="after"><![CDATA[
             <!-- Stripe Scripts -->
             <script>
             (function() {
@@ -39,14 +39,25 @@
                 divider.style.display = 'none';
                 divider.innerHTML = '<span style="background: #fff; padding: 0 10px; color: #999;">O</span>';
 
-                // Insert after .button-group-page
-                var buttonGroup = document.querySelector('.button-group-page');
-                if (buttonGroup && buttonGroup.parentNode) {
-                    buttonGroup.parentNode.insertBefore(divider, buttonGroup.nextSibling);
-                    buttonGroup.parentNode.insertBefore(container, divider);
-                    debug('Container inserted after .button-group-page');
+                // Insert after add to cart button
+                var buttonCart = document.querySelector('#button-cart');
+                if (!buttonCart) {
+                    debug('button-cart not found');
+                    return;
+                }
+
+                // Find the container div (usually .button-group or similar)
+                var insertPoint = buttonCart.closest('.button-group, .button-group-page, .cart');
+                if (!insertPoint) {
+                    insertPoint = buttonCart.parentNode;
+                }
+
+                if (insertPoint && insertPoint.parentNode) {
+                    insertPoint.parentNode.insertBefore(container, insertPoint.nextSibling);
+                    insertPoint.parentNode.insertBefore(divider, container.nextSibling);
+                    debug('Container inserted after add to cart button');
                 } else {
-                    debug('.button-group-page not found');
+                    debug('Could not find insertion point');
                     return;
                 }
 

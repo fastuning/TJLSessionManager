@@ -239,7 +239,8 @@ var StripeProductApplePay = (function() {
             },
             layout: {
                 maxColumns: 1,
-                maxRows: 1
+                maxRows: 1,
+                overflow: 'never'
             }
         });
 
