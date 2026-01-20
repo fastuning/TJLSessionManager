@@ -17,6 +17,7 @@ $_['entry_product_button']  = 'Botón en Ficha de Producto';
 $_['entry_button_style']    = 'Estilo del Botón Apple Pay';
 $_['entry_order_status']    = 'Estado del Pedido';
 $_['entry_geo_zone']        = 'Zona Geográfica';
+$_['entry_debug_mode']      = 'Modo Debug';
 $_['entry_status']          = 'Estado';
 $_['entry_sort_order']      = 'Orden de Clasificación';
 

@@ -82,7 +82,7 @@ class ControllerExtensionModuleStripeProductPayment extends Controller {
     private function createPaymentIntent($data) {
         $json = array();
 
-        $this->debugLog('createPaymentIntent called with data: ' . print_r($data, true));
+        $this->log->write('[Stripe Apple Pay] createPaymentIntent called with data: ' . print_r($data, true));
 
         try {
             $this->load->model('catalog/product');
@@ -207,7 +207,7 @@ class ControllerExtensionModuleStripeProductPayment extends Controller {
                 $json['shipping_cost'] = $shipping_cost;
                 $this->log->write('[Stripe Apple Pay] Payment intent created: ' . $payment_intent->id . ' - Amount: ' . $amount . ' cents');
             } else {
-                $this->debugLog('ERROR: Failed to create payment intent - Response: ' . print_r($payment_intent, true));
+                $this->log->write('[Stripe Apple Pay] ERROR: Failed to create payment intent - Response: ' . print_r($payment_intent, true));
                 $json['error'] = 'Failed to create payment intent';
             }
 
@@ -260,7 +260,7 @@ class ControllerExtensionModuleStripeProductPayment extends Controller {
                     $json['redirect'] = $this->url->link('checkout/success', '', true);
                     $this->log->write('[Stripe Apple Pay] confirmPayment - Order created successfully: ' . $order_id);
                 } else {
-                    $this->debugLog('confirmPayment - ERROR: Failed to create or');
+                    $this->log->write('[Stripe Apple Pay] confirmPayment - ERROR: Failed to create order');
                     $json['error'] = 'Failed to create order';
                 }
             } else {
@@ -287,7 +287,7 @@ class ControllerExtensionModuleStripeProductPayment extends Controller {
             $this->log->write('[Stripe Apple Pay] getShippingOptions - Country: ' . $country_code);
 
             if (!$country_code) {
-                $this->debugLog('ERROR: No country code provi');
+                $this->log->write('[Stripe Apple Pay] ERROR: No country code provided');
                 $json['error'] = 'Country required';
                 return $json;
             }
@@ -324,7 +324,7 @@ class ControllerExtensionModuleStripeProductPayment extends Controller {
                 )
             );
 
-            $this->debugLog('Shipping options returned for Spain: 4.95');
+            $this->log->write('[Stripe Apple Pay] Shipping options returned for Spain: 4.95€');
 
         } catch (Exception $e) {
             $this->log->write('[Stripe Apple Pay] ERROR in getShippingOptions: ' . $e->getMessage());
@@ -360,8 +360,8 @@ class ControllerExtensionModuleStripeProductPayment extends Controller {
         $total = $subtotal + $shipping_cost;
 
         $this->log->write('[Stripe Apple Pay] createOrder - Subtotal: ' . $subtotal . '€, Shipping: ' . $shipping_cost . '€, Total: ' . $total . '€');
-        $this->debugLog('createOrder - Shipping address received: ' . print_r($shipping_address, true));
-        $this->debugLog('createOrder - Billing address received: ' . print_r($billing_address, true));
+        $this->log->write('[Stripe Apple Pay] createOrder - Shipping address received: ' . print_r($shipping_address, true));
+        $this->log->write('[Stripe Apple Pay] createOrder - Billing address received: ' . print_r($billing_address, true));
 
         // Prepare order data
         $order_data = array();
@@ -452,7 +452,7 @@ class ControllerExtensionModuleStripeProductPayment extends Controller {
 
         // Log if we used billing as fallback
         if (empty($address_lines[0]) && !empty($billing_address['address']['line1'])) {
-            $this->debugLog('createOrder - Using billing address as fallback for empty shipping addr');
+            $this->log->write('[Stripe Apple Pay] createOrder - Using billing address as fallback for empty shipping address');
         }
 
         // Convert shipping country code to country_id
@@ -569,7 +569,7 @@ class ControllerExtensionModuleStripeProductPayment extends Controller {
         $secret_key = $this->config->get('payment_stripe_applepay_secret_key');
 
         if (!$secret_key) {
-            $this->debugLog('ERROR: No secret key configu');
+            $this->log->write('[Stripe Apple Pay] ERROR: No secret key configured');
             return (object)array('error' => array('message' => 'Stripe not configured'));
         }
 

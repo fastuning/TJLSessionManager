@@ -106,6 +106,12 @@ class ControllerExtensionPaymentStripeApplepay extends Controller {
 
         $data['geo_zones'] = $this->model_localisation_geo_zone->getGeoZones();
 
+        if (isset($this->request->post['payment_stripe_applepay_debug_mode'])) {
+            $data['payment_stripe_applepay_debug_mode'] = $this->request->post['payment_stripe_applepay_debug_mode'];
+        } else {
+            $data['payment_stripe_applepay_debug_mode'] = $this->config->get('payment_stripe_applepay_debug_mode');
+        }
+
         if (isset($this->request->post['payment_stripe_applepay_status'])) {
             $data['payment_stripe_applepay_status'] = $this->request->post['payment_stripe_applepay_status'];
         } else {
@@ -151,6 +157,7 @@ class ControllerExtensionPaymentStripeApplepay extends Controller {
             'payment_stripe_applepay_test_mode' => 1,
             'payment_stripe_applepay_product_button' => 1,
             'payment_stripe_applepay_button_style' => 'dark',
+            'payment_stripe_applepay_debug_mode' => 0,
             'payment_stripe_applepay_sort_order' => 1
         ));
 

@@ -17,6 +17,7 @@ $_['entry_product_button']  = 'Product Page Button';
 $_['entry_button_style']    = 'Apple Pay Button Style';
 $_['entry_order_status']    = 'Order Status';
 $_['entry_geo_zone']        = 'Geo Zone';
+$_['entry_debug_mode']      = 'Debug Mode';
 $_['entry_status']          = 'Status';
 $_['entry_sort_order']      = 'Sort Order';
 
