@@ -31,12 +31,14 @@
                 container.id = 'stripe-applepay-button-container';
                 container.style.marginTop = '15px';
                 container.style.marginBottom = '15px';
+                container.style.order = '3';
 
                 var divider = document.createElement('div');
                 divider.id = 'stripe-applepay-divider';
                 divider.style.textAlign = 'center';
                 divider.style.margin = '15px 0';
                 divider.style.display = 'none';
+                divider.style.order = '3';
                 divider.innerHTML = '<span style="background: #fff; padding: 0 10px; color: #999;">O</span>';
 
                 // Insert after add to cart button
