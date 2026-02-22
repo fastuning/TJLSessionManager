@@ -1,0 +1,116 @@
+<div id="stripe-payment-form">
+  <div id="stripe-payment-element"></div>
+  <div id="stripe-payment-errors" role="alert" style="color: #dc3545; margin-top: 10px;"></div>
+</div>
+
+<div class="buttons">
+  <div class="pull-right">
+    <button type="button" id="button-confirm" class="btn btn-primary" disabled>
+      <span id="button-text">{{ button_confirm }}</span>
+      <span id="spinner" style="display: none;">{{ text_loading }}</span>
+    </button>
+  </div>
+</div>
+
+<meta name="stripe-publishable-key" content="{{ publishable_key }}">
+
+<script src="https://js.stripe.com/v3/"></script>
+<script type="text/javascript">
+(function() {
+    var stripe = Stripe('{{ publishable_key }}');
+    var elements;
+    var paymentElement;
+
+    initialize();
+
+    document.getElementById('button-confirm').addEventListener('click', handleSubmit);
+
+    async function initialize() {
+        // Request client secret from server
+        const response = await fetch('index.php?route=extension/payment/stripe_applepay/send', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' }
+        });
+
+        const data = await response.json();
+
+        if (data.error) {
+            showError(data.error);
+            return;
+        }
+
+        const clientSecret = data.client_secret;
+
+        const appearance = {
+            theme: 'stripe'
+        };
+
+        elements = stripe.elements({ appearance, clientSecret });
+
+        paymentElement = elements.create('payment');
+        paymentElement.mount('#stripe-payment-element');
+
+        // Enable button when element is ready
+        paymentElement.on('ready', function() {
+            document.getElementById('button-confirm').disabled = false;
+        });
+    }
+
+    async function handleSubmit(e) {
+        e.preventDefault();
+        setLoading(true);
+
+        const { error, paymentIntent } = await stripe.confirmPayment({
+            elements,
+            confirmParams: {
+                return_url: '{{ url('checkout/success') }}'
+            },
+            redirect: 'if_required'
+        });
+
+        if (error) {
+            showError(error.message);
+            setLoading(false);
+        } else if (paymentIntent && paymentIntent.status === 'succeeded') {
+            // Send confirmation to server
+            const response = await fetch('index.php?route=extension/payment/stripe_applepay/callback', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    payment_intent_id: paymentIntent.id
+                })
+            });
+
+            const data = await response.json();
+
+            if (data.success && data.redirect) {
+                window.location.href = data.redirect;
+            } else {
+                showError(data.error || 'Payment processing failed');
+                setLoading(false);
+            }
+        }
+    }
+
+    function showError(message) {
+        const errorElement = document.getElementById('stripe-payment-errors');
+        errorElement.textContent = message;
+    }
+
+    function setLoading(isLoading) {
+        const button = document.getElementById('button-confirm');
+        const buttonText = document.getElementById('button-text');
+        const spinner = document.getElementById('spinner');
+
+        if (isLoading) {
+            button.disabled = true;
+            buttonText.style.display = 'none';
+            spinner.style.display = 'inline-block';
+        } else {
+            button.disabled = false;
+            buttonText.style.display = 'inline-block';
+            spinner.style.display = 'none';
+        }
+    }
+})();
+</script>

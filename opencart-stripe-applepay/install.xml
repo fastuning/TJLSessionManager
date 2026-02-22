@@ -1,0 +1,148 @@
+<?xml version="1.0" encoding="utf-8"?>
+<modification>
+    <name>Stripe Apple Pay - Product Page Button</name>
+    <code>stripe_applepay_product_button</code>
+    <version>2.0.0</version>
+    <author>Custom Development</author>
+    <link>https://www.stripe.com</link>
+
+    <!-- Add Apple Pay button and scripts to product page -->
+    <file path="catalog/view/theme/*/template/product/product.twig">
+        <operation>
+            <search><![CDATA[<a id="button-cart"]]></search>
+            <add position="after"><![CDATA[
+            <!-- Stripe Scripts -->
+            <script>
+            (function() {
+                var debugMode = false;
+
+                function debug(msg, data) {
+                    if (debugMode) {
+                        if (data !== undefined) {
+                            console.log('[Stripe] ' + msg, data);
+                        } else {
+                            console.log('[Stripe] ' + msg);
+                        }
+                    }
+                }
+
+                // Create button container
+                var container = document.createElement('div');
+                container.id = 'stripe-applepay-button-container';
+                container.style.marginTop = '15px';
+                container.style.marginBottom = '15px';
+                container.style.order = '3';
+
+                // Insert after add to cart button
+                var buttonCart = document.querySelector('#button-cart');
+                if (!buttonCart) {
+                    debug('button-cart not found');
+                    return;
+                }
+
+                // Find the container div (usually .button-group or similar)
+                var insertPoint = buttonCart.closest('.button-group, .button-group-page, .cart');
+                if (!insertPoint) {
+                    insertPoint = buttonCart.parentNode;
+                }
+
+                if (insertPoint && insertPoint.parentNode) {
+                    insertPoint.parentNode.insertBefore(container, insertPoint.nextSibling);
+                    debug('Container inserted after add to cart button');
+                } else {
+                    debug('Could not find insertion point');
+                    return;
+                }
+
+                debug('Starting initialization...');
+
+                // Fetch Stripe configuration from server
+                fetch('index.php?route=extension/module/stripe_product_payment/getConfig')
+                    .then(function(response) {
+                        debug('Config response received');
+                        return response.json();
+                    })
+                    .then(function(config) {
+                        debugMode = config.debug_mode || false;
+                        debug('Config loaded', config);
+
+                        if (!config.enabled || !config.publishable_key) {
+                            debug('Apple Pay not configured or disabled');
+                            return;
+                        }
+
+                        // Inject meta tag with publishable key
+                        if (!document.querySelector('meta[name="stripe-publishable-key"]')) {
+                            var meta = document.createElement('meta');
+                            meta.name = 'stripe-publishable-key';
+                            meta.content = config.publishable_key;
+                            document.head.appendChild(meta);
+                            debug('Publishable key injected');
+                        }
+
+                        // Load Stripe.js
+                        if (typeof Stripe === 'undefined') {
+                            debug('Loading Stripe.js...');
+                            var stripeScript = document.createElement('script');
+                            stripeScript.src = 'https://js.stripe.com/v3/';
+                            stripeScript.onload = function() {
+                                debug('Stripe.js loaded');
+                                loadStripeApplePay();
+                            };
+                            stripeScript.onerror = function() {
+                                console.error('[Stripe] Failed to load Stripe.js');
+                            };
+                            document.head.appendChild(stripeScript);
+                        } else {
+                            debug('Stripe.js already loaded');
+                            loadStripeApplePay();
+                        }
+
+                        function loadStripeApplePay() {
+                            debug('Loading stripe_applepay.js...');
+                            var applePayScript = document.createElement('script');
+                            applePayScript.src = 'catalog/view/javascript/stripe_applepay.js?v=200';
+                            applePayScript.onload = function() {
+                                debug('stripe_applepay.js loaded');
+                                if (typeof StripeProductApplePay !== 'undefined') {
+                                    var productData = {
+                                        product_id: {{ product_id }},
+                                        {% if options %}
+                                        options: {{ options|json_encode|raw }},
+                                        {% endif %}
+                                        quantity_selector: '#product-quantity, #input-quantity',
+                                        price_element: '.product-price-new, #product .price-new, #product .price',
+                                        currency: '{{ currency_code }}',
+                                        ajax_url: 'index.php?route=extension/module/stripe_product_payment/process'
+                                    };
+                                    debug('Initializing with product data', productData);
+                                    StripeProductApplePay.init(productData);
+                                } else {
+                                    console.error('[Stripe] StripeProductApplePay not defined');
+                                }
+                            };
+                            applePayScript.onerror = function() {
+                                console.error('[Stripe] Failed to load stripe_applepay.js');
+                            };
+                            document.head.appendChild(applePayScript);
+                        }
+                    })
+                    .catch(function(error) {
+                        console.error('[Stripe] Failed to load config:', error);
+                    });
+            })();
+            </script>
+            ]]></add>
+        </operation>
+    </file>
+
+    <!-- Add Apple Pay domain association meta tag -->
+    <file path="catalog/view/theme/*/template/common/header.twig">
+        <operation>
+            <search><![CDATA[<head>]]></search>
+            <add position="after"><![CDATA[
+<meta name="apple-pay-domain-association-file" content="/.well-known/apple-developer-merchantid-domain-association">
+            ]]></add>
+        </operation>
+    </file>
+</modification>

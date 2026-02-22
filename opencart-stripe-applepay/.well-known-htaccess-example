@@ -1,0 +1,22 @@
+# Configuración .htaccess para la carpeta .well-known
+# Este archivo debe colocarse en /.well-known/.htaccess
+
+# Permitir acceso al archivo de verificación de Apple Pay
+<Files "apple-developer-merchantid-domain-association">
+    Order allow,deny
+    Allow from all
+    Satisfy any
+</Files>
+
+# Permitir acceso a toda la carpeta .well-known
+<IfModule mod_rewrite.c>
+    RewriteEngine off
+</IfModule>
+
+# Configurar tipo MIME correcto
+<IfModule mod_mime.c>
+    AddType application/octet-stream .
+</IfModule>
+
+# Habilitar acceso sin índice
+Options -Indexes
